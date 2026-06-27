@@ -325,4 +325,5 @@ func (f *fakePlaylists) Update(ctx context.Context, playlistID string, name *str
 	return nil
 }
 
-func (f *fakePlaylists) SyncGeneratedBPMPlaylists(context.Context) error { return nil }
+func (f *fakePlaylists) SyncGeneratedBPMPlaylists(context.Context) error      { return nil }
+func (f *fakePlaylists) SyncGeneratedDiscoveryPlaylist(context.Context) error { return nil }

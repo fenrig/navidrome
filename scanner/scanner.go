@@ -165,6 +165,9 @@ func (s *scannerImpl) scanFolders(ctx context.Context, fullScan bool, targets []
 		// Ensure generated BPM playlists exist and are current
 		s.syncGeneratedBPMPlaylists(ctx),
 
+		// Ensure algorithmic discovery playlists exist and are current
+		s.syncGeneratedDiscoveryPlaylist(ctx),
+
 		// Optimize DB
 		s.runOptimize(ctx),
 	)
@@ -296,6 +299,15 @@ func (s *scannerImpl) syncGeneratedBPMPlaylists(ctx context.Context) func() erro
 	return func() error {
 		if err := s.pls.SyncGeneratedBPMPlaylists(ctx); err != nil {
 			log.Error(ctx, "Scanner: Error syncing generated BPM playlists", err)
+		}
+		return nil
+	}
+}
+
+func (s *scannerImpl) syncGeneratedDiscoveryPlaylist(ctx context.Context) func() error {
+	return func() error {
+		if err := s.pls.SyncGeneratedDiscoveryPlaylist(ctx); err != nil {
+			log.Error(ctx, "Scanner: Error syncing generated discovery playlist", err)
 		}
 		return nil
 	}

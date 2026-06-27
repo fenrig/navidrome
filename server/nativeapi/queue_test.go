@@ -17,16 +17,18 @@ var _ = Describe("Queue Endpoints", func() {
 	var (
 		ds       *tests.MockDataStore
 		repo     *tests.MockPlayQueueRepo
+		mfRepo   *tests.MockMediaFileRepo
 		user     model.User
 		userRepo *tests.MockedUserRepo
 	)
 
 	BeforeEach(func() {
 		repo = &tests.MockPlayQueueRepo{}
+		mfRepo = tests.CreateMockMediaFileRepo()
 		user = model.User{ID: "u1", UserName: "user"}
 		userRepo = tests.CreateMockUserRepo()
 		_ = userRepo.Put(&user)
-		ds = &tests.MockDataStore{MockedPlayQueue: repo, MockedUser: userRepo, MockedProperty: &tests.MockedPropertyRepo{}}
+		ds = &tests.MockDataStore{MockedPlayQueue: repo, MockedMediaFile: mfRepo, MockedUser: userRepo, MockedProperty: &tests.MockedPropertyRepo{}}
 	})
 
 	Describe("POST /queue", func() {
@@ -278,4 +280,84 @@ var _ = Describe("Queue Endpoints", func() {
 			Expect(w.Code).To(Equal(http.StatusInternalServerError))
 		})
 	})
+
+	Describe("POST /queue/autofill", func() {
+		It("appends the next recommended track", func() {
+			repo.Queue = &model.PlayQueue{
+				UserID: user.ID,
+				Items: model.MediaFiles{
+					{
+						ID:          "seed",
+						Title:       "Seed",
+						Artist:      "Artist A",
+						ArtistID:    "Artist A",
+						Album:       "Album A",
+						AlbumID:     "Album A",
+						AlbumArtist: "Artist A",
+						Genres:      model.Genres{{Name: "Genre X"}},
+						Tags:        model.Tags{model.TagGenre: []string{"Genre X"}},
+						BPM:         intPtrLocal(140),
+						PlayCount:   20,
+						Starred:     true,
+					},
+					{ID: "existing", Title: "Existing", Artist: "Artist Z", ArtistID: "Artist Z", AlbumID: "Album Z"},
+				},
+			}
+			mfRepo.SetData(model.MediaFiles{
+				{
+					ID:          "seed",
+					Title:       "Seed",
+					Artist:      "Artist A",
+					ArtistID:    "Artist A",
+					Album:       "Album A",
+					AlbumID:     "Album A",
+					AlbumArtist: "Artist A",
+					Genres:      model.Genres{{Name: "Genre X"}},
+					Tags:        model.Tags{model.TagGenre: []string{"Genre X"}},
+					BPM:         intPtrLocal(140),
+					PlayCount:   20,
+					Starred:     true,
+				},
+				{
+					ID:          "recommended",
+					Title:       "Recommended",
+					Artist:      "Artist A",
+					ArtistID:    "Artist A",
+					Album:       "Album B",
+					AlbumID:     "Album B",
+					AlbumArtist: "Artist A",
+					Genres:      model.Genres{{Name: "Genre X"}},
+					Tags:        model.Tags{model.TagGenre: []string{"Genre X"}},
+					BPM:         intPtrLocal(141),
+				},
+				{
+					ID:          "unrelated",
+					Title:       "Unrelated",
+					Artist:      "Artist Q",
+					ArtistID:    "Artist Q",
+					Album:       "Album Q",
+					AlbumID:     "Album Q",
+					AlbumArtist: "Artist Q",
+					Genres:      model.Genres{{Name: "Genre Y"}},
+					Tags:        model.Tags{model.TagGenre: []string{"Genre Y"}},
+					BPM:         intPtrLocal(90),
+				},
+			})
+
+			req := httptest.NewRequest("POST", "/queue/autofill?count=1", nil)
+			req = req.WithContext(request.WithUser(req.Context(), user))
+			w := httptest.NewRecorder()
+
+			autofillQueue(ds)(w, req)
+			Expect(w.Code).To(Equal(http.StatusNoContent))
+			Expect(repo.Queue).ToNot(BeNil())
+			Expect(repo.Queue.Items).To(HaveLen(3))
+			Expect(repo.Queue.Items[2].ID).To(Equal("recommended"))
+			Expect(repo.LastCols).To(ConsistOf("items"))
+		})
+	})
 })
+
+func intPtrLocal(v int) *int {
+	return &v
+}

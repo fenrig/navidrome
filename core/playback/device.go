@@ -273,6 +273,23 @@ func (pd *playbackDevice) trackSwitcherGoroutine() {
 					pd.ActiveTrack.Unpause()
 				}
 			} else {
+				if err := pd.extendQueueForAutoplay(); err != nil {
+					log.Error("Error extending jukebox queue", err)
+					log.Debug("There is no song left in the playlist. Finish.")
+					continue
+				}
+				if !pd.PlaybackQueue.IsAtLastElement() {
+					pd.PlaybackQueue.IncreaseIndex()
+					log.Debug("Switching to next song after extension", "queue", pd.PlaybackQueue.String())
+					err := pd.switchActiveTrackByIndex(pd.PlaybackQueue.Index)
+					if err != nil {
+						log.Error("Error switching track", err)
+					}
+					if pd.ActiveTrack != nil {
+						pd.ActiveTrack.Unpause()
+					}
+					continue
+				}
 				log.Debug("There is no song left in the playlist. Finish.")
 			}
 		case <-pd.serviceCtx.Done():
@@ -295,5 +312,31 @@ func (pd *playbackDevice) switchActiveTrackByIndex(index int) error {
 	}
 	pd.ActiveTrack = track
 	pd.ActiveTrack.SetVolume(pd.Gain)
+	return nil
+}
+
+func (pd *playbackDevice) extendQueueForAutoplay() error {
+	if pd.ParentPlaybackServer == nil || pd.PlaybackQueue == nil || pd.PlaybackQueue.IsEmpty() {
+		return nil
+	}
+
+	contextTracks := pd.PlaybackQueue.Items
+	if len(contextTracks) > 6 {
+		contextTracks = contextTracks[len(contextTracks)-6:]
+	}
+
+	excludeIDs := make([]string, 0, len(pd.PlaybackQueue.Items))
+	for _, item := range pd.PlaybackQueue.Items {
+		excludeIDs = append(excludeIDs, item.ID)
+	}
+
+	recommended, err := pd.ParentPlaybackServer.RecommendTracks(pd.serviceCtx, contextTracks, excludeIDs, 6)
+	if err != nil {
+		return err
+	}
+	if len(recommended) == 0 {
+		return nil
+	}
+	pd.PlaybackQueue.Add(recommended)
 	return nil
 }

@@ -101,11 +101,6 @@ func (ms *mediaStreamer) NewStream(ctx context.Context, mf *model.MediaFile, req
 		return s, nil
 	}
 
-	stagePath, cleanup, err := storage.StagedPath(mf.LibraryPath, mf.Path)
-	if err != nil {
-		return nil, err
-	}
-
 	job := &streamJob{
 		ms:         ms,
 		mf:         mf,

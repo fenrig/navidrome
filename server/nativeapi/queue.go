@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
+	"github.com/Masterminds/squirrel"
+	playlistsvc "github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
@@ -209,6 +212,83 @@ func clearQueue(ds model.DataStore) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func autofillQueue(ds model.DataStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		user, _ := request.UserFrom(ctx)
+
+		count := 1
+		if raw := r.URL.Query().Get("count"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 1 {
+				http.Error(w, "count must be a positive integer", http.StatusBadRequest)
+				return
+			}
+			count = n
+		}
+
+		queue, err := ds.PlayQueue(ctx).RetrieveWithMediaFiles(user.ID)
+		if err != nil && !errors.Is(err, model.ErrNotFound) {
+			log.Error(ctx, "Error retrieving queue for autofill", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if queue == nil {
+			queue = &model.PlayQueue{UserID: user.ID}
+		}
+
+		pool, err := ds.MediaFile(ctx).GetAll(model.QueryOptions{Filters: squirrel.Eq{"missing": false}})
+		if err != nil {
+			log.Error(ctx, "Error loading media files for queue autofill", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if len(pool) == 0 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		existing := map[string]struct{}{}
+		for _, item := range queue.Items {
+			existing[item.ID] = struct{}{}
+		}
+		candidates := make(model.MediaFiles, 0, len(pool))
+		for _, item := range pool {
+			if _, ok := existing[item.ID]; ok {
+				continue
+			}
+			candidates = append(candidates, item)
+		}
+		if len(candidates) == 0 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		contextTracks := queue.Items
+		if len(contextTracks) > 6 {
+			contextTracks = contextTracks[len(contextTracks)-6:]
+		}
+
+		recommended := playlistsvc.NewTrackAffinity().Recommend(candidates, contextTracks, count)
+		if len(recommended) == 0 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		queue.Items = append(queue.Items, recommended...)
+		if queue.UserID == "" {
+			queue.UserID = user.ID
+		}
+		if err := ds.PlayQueue(ctx).Store(queue, "items"); err != nil {
+			log.Error(ctx, "Error autofilling queue", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

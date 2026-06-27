@@ -222,6 +222,8 @@ func (p *mockPlaylists) ImportFromFolder(ctx context.Context, folder *model.Fold
 	return args.Get(0).(*model.Playlist), args.Error(1)
 }
 
+func (p *mockPlaylists) SyncGeneratedDiscoveryPlaylist(context.Context) error { return nil }
+
 type mockFolderRepository struct {
 	model.FolderRepository
 	data    map[*model.Folder]error

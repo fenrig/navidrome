@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Masterminds/squirrel"
+	playlistsvc "github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/server/subsonic/responses"
@@ -77,6 +79,10 @@ func (api *Router) GetPlayQueue(r *http.Request) (*responses.Subsonic, error) {
 	if err != nil && !errors.Is(err, model.ErrNotFound) {
 		return nil, err
 	}
+	pq, err = api.autofillPlayQueue(r, pq)
+	if err != nil {
+		return nil, err
+	}
 	if pq == nil || len(pq.Items) == 0 {
 		response := newResponse()
 		response.PlayQueue = &responses.PlayQueue{
@@ -137,6 +143,9 @@ func (api *Router) SavePlayQueue(r *http.Request) (*responses.Subsonic, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := api.autofillPlayQueue(r, pq); err != nil {
+		return nil, err
+	}
 	return newResponse(), nil
 }
 
@@ -146,6 +155,10 @@ func (api *Router) GetPlayQueueByIndex(r *http.Request) (*responses.Subsonic, er
 	repo := api.ds.PlayQueue(r.Context())
 	pq, err := repo.RetrieveWithMediaFiles(user.ID)
 	if err != nil && !errors.Is(err, model.ErrNotFound) {
+		return nil, err
+	}
+	pq, err = api.autofillPlayQueue(r, pq)
+	if err != nil {
 		return nil, err
 	}
 	if pq == nil || len(pq.Items) == 0 {
@@ -212,5 +225,74 @@ func (api *Router) SavePlayQueueByIndex(r *http.Request) (*responses.Subsonic, e
 	if err != nil {
 		return nil, err
 	}
+	if _, err := api.autofillPlayQueue(r, pq); err != nil {
+		return nil, err
+	}
 	return newResponse(), nil
+}
+
+const (
+	playQueueAutofillRecentWindow = 6
+	playQueueAutofillMinRemaining = 4
+	playQueueAutofillMaxAppend    = 6
+)
+
+func (api *Router) autofillPlayQueue(r *http.Request, pq *model.PlayQueue) (*model.PlayQueue, error) {
+	if pq == nil || len(pq.Items) == 0 {
+		return pq, nil
+	}
+
+	current := pq.Current
+	if current < 0 || current >= len(pq.Items) {
+		current = len(pq.Items) - 1
+	}
+	remaining := len(pq.Items) - current - 1
+	if remaining >= playQueueAutofillMinRemaining {
+		return pq, nil
+	}
+
+	appendCount := playQueueAutofillMinRemaining - remaining
+	if appendCount > playQueueAutofillMaxAppend {
+		appendCount = playQueueAutofillMaxAppend
+	}
+	if appendCount <= 0 {
+		return pq, nil
+	}
+
+	ctx := r.Context()
+	pool, err := api.ds.MediaFile(ctx).GetAll(model.QueryOptions{Filters: squirrel.Eq{"missing": false}})
+	if err != nil {
+		return nil, err
+	}
+
+	existing := map[string]struct{}{}
+	for _, item := range pq.Items {
+		existing[item.ID] = struct{}{}
+	}
+	candidates := make(model.MediaFiles, 0, len(pool))
+	for _, item := range pool {
+		if _, ok := existing[item.ID]; ok {
+			continue
+		}
+		candidates = append(candidates, item)
+	}
+	if len(candidates) == 0 {
+		return pq, nil
+	}
+
+	start := current - playQueueAutofillRecentWindow + 1
+	if start < 0 {
+		start = 0
+	}
+	contextTracks := pq.Items[start : current+1]
+	recommended := playlistsvc.NewTrackAffinity().Recommend(candidates, contextTracks, appendCount)
+	if len(recommended) == 0 {
+		return pq, nil
+	}
+
+	pq.Items = append(pq.Items, recommended...)
+	if err := api.ds.PlayQueue(ctx).Store(pq, "items"); err != nil {
+		return nil, err
+	}
+	return pq, nil
 }

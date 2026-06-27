@@ -2,6 +2,7 @@ package tests
 
 import (
 	"errors"
+	"slices"
 
 	"github.com/deluan/rest"
 	"github.com/navidrome/navidrome/model"
@@ -43,6 +44,20 @@ func (m *MockPlaylistRepo) Get(id string) (*model.Playlist, error) {
 
 func (m *MockPlaylistRepo) GetWithTracks(id string, _, _ bool) (*model.Playlist, error) {
 	return m.Get(id)
+}
+
+func (m *MockPlaylistRepo) GetAll(_ ...model.QueryOptions) (model.Playlists, error) {
+	if m.Err {
+		return nil, errors.New("error")
+	}
+	res := make(model.Playlists, 0, len(m.Data))
+	for _, pls := range m.Data {
+		res = append(res, *pls)
+	}
+	slices.SortFunc(res, func(a, b model.Playlist) int {
+		return cmpOrString(a.Name, b.Name, a.ID, b.ID)
+	})
+	return res, nil
 }
 
 func (m *MockPlaylistRepo) Put(pls *model.Playlist, _ ...string) error {
@@ -106,6 +121,22 @@ func (m *MockPlaylistRepo) CountAll(_ ...model.QueryOptions) (int64, error) {
 		return 0, errors.New("error")
 	}
 	return int64(len(m.Data)), nil
+}
+
+func cmpOrString(a, b, a2, b2 string) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	if a2 < b2 {
+		return -1
+	}
+	if a2 > b2 {
+		return 1
+	}
+	return 0
 }
 
 var _ model.PlaylistRepository = (*MockPlaylistRepo)(nil)

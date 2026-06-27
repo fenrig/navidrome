@@ -185,6 +185,7 @@ func (api *Router) addQueueRoute(r chi.Router) {
 	r.Route("/queue", func(r chi.Router) {
 		r.Get("/", getQueue(api.ds))
 		r.Post("/", saveQueue(api.ds))
+		r.Post("/autofill", autofillQueue(api.ds))
 		r.Put("/", updateQueue(api.ds))
 		r.Delete("/", clearQueue(api.ds))
 	})

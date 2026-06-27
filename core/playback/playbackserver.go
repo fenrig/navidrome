@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/navidrome/navidrome/conf"
+	playlistsvc "github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/utils/singleton"
@@ -19,6 +20,7 @@ type PlaybackServer interface {
 	Run(ctx context.Context) error
 	GetDeviceForUser(user string) (*playbackDevice, error)
 	GetMediaFile(id string) (*model.MediaFile, error)
+	RecommendTracks(ctx context.Context, contextTracks model.MediaFiles, excludeIDs []string, count int) (model.MediaFiles, error)
 }
 
 type playbackServer struct {
@@ -112,6 +114,29 @@ func (ps *playbackServer) getDefaultDevice() (*playbackDevice, error) {
 // GetMediaFile retrieves the MediaFile given by the id parameter
 func (ps *playbackServer) GetMediaFile(id string) (*model.MediaFile, error) {
 	return ps.datastore.MediaFile(*ps.ctx).Get(id)
+}
+
+func (ps *playbackServer) RecommendTracks(ctx context.Context, contextTracks model.MediaFiles, excludeIDs []string, count int) (model.MediaFiles, error) {
+	pool, err := ps.datastore.MediaFile(ctx).GetAll(model.QueryOptions{Max: 0})
+	if err != nil {
+		return nil, err
+	}
+
+	excluded := map[string]struct{}{}
+	for _, id := range excludeIDs {
+		excluded[id] = struct{}{}
+	}
+	candidates := make(model.MediaFiles, 0, len(pool))
+	for _, mf := range pool {
+		if _, ok := excluded[mf.ID]; ok {
+			continue
+		}
+		if mf.Missing {
+			continue
+		}
+		candidates = append(candidates, mf)
+	}
+	return playlistsvc.NewTrackAffinity().Recommend(candidates, contextTracks, count), nil
 }
 
 // GetDeviceForUser returns the audio playback device for the given user. As of now this is but only the default device.
