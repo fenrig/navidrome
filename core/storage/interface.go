@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"io"
 	"io/fs"
 
 	"github.com/navidrome/navidrome/model/metadata"
@@ -9,6 +10,13 @@ import (
 
 type Storage interface {
 	FS() (MusicFS, error)
+}
+
+// FileOpener opens a file relative to the storage root without requiring a
+// full filesystem walk. Implementations should return a readable stream for
+// the requested relative path.
+type FileOpener interface {
+	Open(path string) (io.ReadCloser, error)
 }
 
 // MusicFS is an interface that extends the fs.FS interface with the ability to read tags from files

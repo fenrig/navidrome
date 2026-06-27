@@ -14,6 +14,7 @@ import (
 type libraryView struct {
 	FS      storage.MusicFS
 	absRoot string
+	path    string
 }
 
 // Abs returns the absolute path for a library-relative path. Returns "" for an
@@ -40,5 +41,5 @@ func loadLibraryView(ctx context.Context, ds model.DataStore, libID int) (librar
 	if err != nil {
 		return libraryView{}, err
 	}
-	return libraryView{FS: fs, absRoot: lib.Path}, nil
+	return libraryView{FS: fs, absRoot: lib.Path, path: lib.Path}, nil
 }

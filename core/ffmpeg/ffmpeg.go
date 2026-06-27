@@ -69,9 +69,10 @@ var ErrAnimatedWebPUnsupported = errors.New("ffmpeg lacks libwebp_anim encoder â
 
 const (
 	extractImageCmd     = "ffmpeg -i %s -map 0:v -map -0:V -vcodec copy -f image2pipe -"
+	extractImagePipeCmd = "ffmpeg -i pipe:0 -map 0:v -map -0:V -vcodec copy -f image2pipe -"
 	probeCmd            = "ffmpeg %s -f ffmetadata"
 	probeAudioStreamCmd = "ffprobe -v quiet -select_streams a:0 -print_format json -show_streams -show_format %s"
-	analyzeBPMCmd       = "ffmpeg -v error -i %s -vn -ac 1 -ar 11025 -t 120 -f s16le -"
+	analyzeBPMPipeCmd   = "ffmpeg -v error -i pipe:0 -vn -ac 1 -ar 11025 -t 120 -f s16le -"
 )
 
 type ffmpeg struct{}
@@ -136,6 +137,14 @@ func (e *ffmpeg) ExtractImage(ctx context.Context, path string) (io.ReadCloser, 
 	return e.start(ctx, args)
 }
 
+func (e *ffmpeg) ExtractImageFromReader(ctx context.Context, reader io.Reader) (io.ReadCloser, error) {
+	if _, err := ffmpegCmd(); err != nil {
+		return nil, err
+	}
+	args := fixCmd(extractImagePipeCmd)
+	return e.start(ctx, args, reader)
+}
+
 func fileExists(path string) error {
 	s, err := os.Stat(path)
 	if err != nil {
@@ -182,8 +191,20 @@ func (e *ffmpeg) AnalyzeBPM(ctx context.Context, filePath string) (int, error) {
 	if err := fileExists(filePath); err != nil {
 		return 0, err
 	}
-	args := createFFmpegCommand(analyzeBPMCmd, filePath, 0, 0)
-	r, err := e.start(ctx, args)
+	f, err := os.Open(filePath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	return e.AnalyzeBPMFromReader(ctx, f)
+}
+
+func (e *ffmpeg) AnalyzeBPMFromReader(ctx context.Context, reader io.Reader) (int, error) {
+	if _, err := ffmpegCmd(); err != nil {
+		return 0, err
+	}
+	args := fixCmd(analyzeBPMPipeCmd)
+	r, err := e.start(ctx, args, reader)
 	if err != nil {
 		return 0, err
 	}

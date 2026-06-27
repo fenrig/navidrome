@@ -18,6 +18,7 @@ import (
 	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/core/external"
 	"github.com/navidrome/navidrome/core/ffmpeg"
+	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/resources"
@@ -42,6 +43,10 @@ func selectImageReader(ctx context.Context, artID model.ArtworkID, extractFuncs 
 }
 
 type sourceFunc func() (r io.ReadCloser, path string, err error)
+
+type ffmpegImageReader interface {
+	ExtractImageFromReader(ctx context.Context, reader io.Reader) (io.ReadCloser, error)
+}
 
 func (f sourceFunc) String() string {
 	name := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
@@ -136,32 +141,42 @@ func findBestImageIndex(ctx context.Context, images []taglib.ImageDesc, path str
 	return 0
 }
 
-// fromFFmpegTag is intentionally absolute-path-based. ffmpeg is a subprocess
-// and cannot read from arbitrary fs.FS implementations; piping via stdin is a
-// non-trivial refactor with stream/seek implications.
-//
-// TODO(artwork-musicfs): when the storage backing the library is not local
-// (e.g. a future S3 backend, or FakeFS in tests), short-circuit this source
-// func to return (nil, "", nil) so callers fall through cleanly.
-func fromFFmpegTag(ctx context.Context, ffmpeg ffmpeg.FFmpeg, path string) sourceFunc {
+func fromFFmpegTag(ctx context.Context, ffmpeg ffmpeg.FFmpeg, lib libraryView, relPath string) sourceFunc {
 	return func() (io.ReadCloser, string, error) {
-		if path == "" {
+		if relPath == "" {
 			return nil, "", nil
 		}
+
+		if readerFFmpeg, ok := ffmpeg.(ffmpegImageReader); ok && strings.Contains(lib.path, "://") && !strings.HasPrefix(lib.path, storage.LocalSchemaID+"://") {
+			if s, err := storage.For(lib.path); err == nil {
+				if opener, ok := s.(storage.FileOpener); ok {
+					src, err := opener.Open(relPath)
+					if err == nil {
+						if r, path, err := extractImageFromReader(ctx, readerFFmpeg, src, relPath); err == nil {
+							return r, path, nil
+						} else {
+							log.Trace(ctx, "Could not extract embedded image from storage reader", "path", relPath, err)
+						}
+					} else {
+						log.Trace(ctx, "Could not open embedded image for reader-based extraction", "path", relPath, err)
+					}
+				}
+			}
+		}
+
+		path, cleanup, err := storage.StagedPath(lib.path, relPath)
+		if err != nil {
+			return nil, "", err
+		}
+		if cleanup != nil {
+			defer func() { _ = cleanup() }()
+		}
+
 		r, err := ffmpeg.ExtractImage(ctx, path)
 		if err != nil {
 			return nil, "", err
 		}
-		// Validate that the stream actually contains image data by reading the first byte.
-		// ffmpeg.ExtractImage returns a pipe reader that may fail asynchronously if the
-		// file has no video/image stream (e.g., an MP3 without embedded art).
-		buf := make([]byte, 1)
-		n, err := r.Read(buf)
-		if n == 0 || err != nil {
-			r.Close()
-			return nil, "", fmt.Errorf("ffmpeg produced no image data for %s: %w", path, err)
-		}
-		return readCloser{Reader: io.MultiReader(bytes.NewReader(buf[:n]), r), Closer: r}, path, nil
+		return validateImageStream(r, r, path)
 	}
 }
 
@@ -169,6 +184,43 @@ func fromFFmpegTag(ctx context.Context, ffmpeg ffmpeg.FFmpeg, path string) sourc
 type readCloser struct {
 	io.Reader
 	io.Closer
+}
+
+type multiCloser []io.Closer
+
+func (m multiCloser) Close() error {
+	var firstErr error
+	for _, c := range m {
+		if c == nil {
+			continue
+		}
+		if err := c.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func extractImageFromReader(ctx context.Context, ffmpeg ffmpegImageReader, src io.ReadCloser, path string) (io.ReadCloser, string, error) {
+	r, err := ffmpeg.ExtractImageFromReader(ctx, src)
+	if err != nil {
+		_ = src.Close()
+		return nil, "", err
+	}
+	return validateImageStream(r, multiCloser{r, src}, path)
+}
+
+func validateImageStream(r io.Reader, closer io.Closer, path string) (io.ReadCloser, string, error) {
+	// Validate that the stream actually contains image data by reading the first byte.
+	// ffmpeg returns a pipe reader that may fail asynchronously if the file has no
+	// video/image stream (e.g. an MP3 without embedded art).
+	buf := make([]byte, 1)
+	n, err := r.Read(buf)
+	if n == 0 || err != nil {
+		_ = closer.Close()
+		return nil, "", fmt.Errorf("ffmpeg produced no image data for %s: %w", path, err)
+	}
+	return readCloser{Reader: io.MultiReader(bytes.NewReader(buf[:n]), r), Closer: closer}, path, nil
 }
 
 func fromAlbum(ctx context.Context, a *artwork, id model.ArtworkID) sourceFunc {

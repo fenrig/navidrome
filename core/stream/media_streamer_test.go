@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/conf/configtest"
+	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/core/stream"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
@@ -62,6 +66,35 @@ var _ = Describe("MediaStreamer", func() {
 			Expect(err).To(BeNil())
 			Expect(s.Seekable()).To(BeFalse())
 			Expect(s.Duration()).To(Equal(float32(257.0)))
+		})
+		It("stages remote files before transcoding", func() {
+			remoteRoot := GinkgoT().TempDir()
+			Expect(os.MkdirAll(filepath.Join(remoteRoot, "album"), 0o755)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(remoteRoot, "album", "track.mp3"), []byte("fake audio"), 0o644)).To(Succeed())
+			storage.Register("fake", func(u url.URL) storage.Storage { return remoteStorage{root: remoteRoot} })
+
+			remote := &model.MediaFile{
+				ID:          "remote-1",
+				LibraryPath: "fake:///music",
+				Path:        "album/track.mp3",
+				Suffix:      "mp3",
+				BitRate:     128,
+				Duration:    257.0,
+			}
+			s, err := streamer.NewStream(ctx, remote, stream.Request{Format: "mp3", BitRate: 64})
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(ffmpeg.LastTranscode.FilePath).ToNot(Equal(remote.AbsolutePath()))
+			Expect(strings.HasPrefix(ffmpeg.LastTranscode.FilePath, os.TempDir())).To(BeTrue())
+			_, statErr := os.Stat(ffmpeg.LastTranscode.FilePath)
+			Expect(statErr).ToNot(HaveOccurred())
+
+			_, _ = io.ReadAll(s)
+			Expect(s.Close()).To(Succeed())
+			Eventually(func() bool {
+				_, err := os.Stat(ffmpeg.LastTranscode.FilePath)
+				return os.IsNotExist(err)
+			}, "3s").Should(BeTrue())
 		})
 		It("rejects transcode requests beyond MaxConcurrent with ErrTooManyTranscodes", func() {
 			// Use an ffmpeg whose Read blocks indefinitely so the cache's
@@ -140,3 +173,13 @@ var _ = Describe("MediaStreamer", func() {
 		})
 	})
 })
+
+type remoteStorage struct {
+	root string
+}
+
+func (s remoteStorage) FS() (storage.MusicFS, error) { return nil, nil }
+
+func (s remoteStorage) Open(path string) (io.ReadCloser, error) {
+	return os.Open(filepath.Join(s.root, filepath.FromSlash(path)))
+}

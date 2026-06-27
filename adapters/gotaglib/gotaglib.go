@@ -31,6 +31,12 @@ type extractor struct {
 	fs fs.FS
 }
 
+// NewExtractor returns a filesystem-backed metadata extractor suitable for any fs.FS
+// whose files implement io.ReadSeeker.
+func NewExtractor(fsys fs.FS) local.Extractor {
+	return &extractor{fsys}
+}
+
 func (e extractor) Parse(files ...string) (map[string]metadata.Info, error) {
 	results := make(map[string]metadata.Info)
 	for _, path := range files {
@@ -292,9 +298,7 @@ func parseTIPL(tags map[string][]string) {
 var _ local.Extractor = (*extractor)(nil)
 
 func init() {
-	local.RegisterExtractor("taglib", func(fsys fs.FS, baseDir string) local.Extractor {
-		return &extractor{fsys}
-	})
+	local.RegisterExtractor("taglib", func(fsys fs.FS, baseDir string) local.Extractor { return NewExtractor(fsys) })
 	conf.AddHook(func() {
 		log.Debug("go-taglib version", "version", extractor{}.Version())
 	})

@@ -2,6 +2,7 @@ package local
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -55,6 +56,10 @@ func (s *localStorage) FS() (storage.MusicFS, error) {
 		return nil, fmt.Errorf("%w: %s", err, path)
 	}
 	return &localFS{FS: os.DirFS(path), extractor: s.extractor}, nil
+}
+
+func (s *localStorage) Open(path string) (io.ReadCloser, error) {
+	return os.Open(filepath.Join(s.resolvedPath, filepath.FromSlash(path)))
 }
 
 type localFS struct {

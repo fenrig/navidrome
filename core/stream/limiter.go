@@ -58,11 +58,16 @@ func NewTranscodeLimiter(maxConcurrent, maxPerUser int) TranscodeLimiter {
 type releasingReadCloser struct {
 	io.ReadCloser
 	release func()
+	cleanup func() error
 }
 
 func (r *releasingReadCloser) Close() error {
 	err := r.ReadCloser.Close()
 	r.release()
+	if r.cleanup != nil {
+		err = errors.Join(err, r.cleanup())
+		r.cleanup = nil
+	}
 	return err
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/core/ffmpeg"
+	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
@@ -435,7 +436,15 @@ func (s *deciderService) ensureProbed(ctx context.Context, mf *model.MediaFile) 
 		return nil, nil
 	}
 
-	result, err := s.ff.ProbeAudioStream(ctx, mf.AbsolutePath())
+	path, cleanup, err := storage.StagedPath(mf.LibraryPath, mf.Path)
+	if err != nil {
+		return nil, fmt.Errorf("staging media file %s: %w", mf.ID, err)
+	}
+	if cleanup != nil {
+		defer func() { _ = cleanup() }()
+	}
+
+	result, err := s.ff.ProbeAudioStream(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("probing media file %s: %w", mf.ID, err)
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/core/ffmpeg"
+	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
@@ -54,6 +55,7 @@ type streamJob struct {
 	bitDepth   int
 	channels   int
 	offset     int
+	cleanup    func() error
 }
 
 func (j *streamJob) Key() string {
@@ -88,26 +90,33 @@ func (ms *mediaStreamer) NewStream(ctx context.Context, mf *model.MediaFile, req
 			"requestBitrate", req.BitRate, "requestFormat", req.Format, "requestOffset", req.Offset,
 			"originalBitrate", mf.BitRate, "originalFormat", mf.Suffix,
 			"selectedBitrate", bitRate, "selectedFormat", format)
-		f, err := os.Open(filePath)
+		f, seeker, cleanup, err := openSeekableSource(mf.LibraryPath, mf.Path)
 		if err != nil {
 			return nil, err
 		}
 		s.ReadCloser = f
-		s.Seeker = f
+		s.Seeker = seeker
+		s.cleanup = cleanup
 		s.format = mf.Suffix
 		return s, nil
+	}
+
+	stagePath, cleanup, err := storage.StagedPath(mf.LibraryPath, mf.Path)
+	if err != nil {
+		return nil, err
 	}
 
 	job := &streamJob{
 		ms:         ms,
 		mf:         mf,
-		filePath:   filePath,
+		filePath:   stagePath,
 		format:     format,
 		bitRate:    bitRate,
 		sampleRate: req.SampleRate,
 		bitDepth:   req.BitDepth,
 		channels:   req.Channels,
 		offset:     req.Offset,
+		cleanup:    cleanup,
 	}
 	r, err := ms.cache.Get(ctx, job)
 	if err != nil {
@@ -132,6 +141,35 @@ func (ms *mediaStreamer) NewStream(ctx context.Context, mf *model.MediaFile, req
 	return s, nil
 }
 
+func openSeekableSource(libraryPath, relPath string) (io.ReadCloser, io.Seeker, func() error, error) {
+	s, err := storage.For(libraryPath)
+	if err == nil {
+		if opener, ok := s.(storage.FileOpener); ok {
+			rc, openErr := opener.Open(relPath)
+			if openErr != nil {
+				return nil, nil, nil, openErr
+			}
+			if seeker, ok := rc.(io.Seeker); ok {
+				return rc, seeker, nil, nil
+			}
+			_ = rc.Close()
+		}
+	}
+
+	stagePath, cleanup, err := storage.StagedPath(libraryPath, relPath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	f, err := os.Open(stagePath)
+	if err != nil {
+		if cleanup != nil {
+			_ = cleanup()
+		}
+		return nil, nil, nil, err
+	}
+	return f, f, cleanup, nil
+}
+
 type Stream struct {
 	ctx     context.Context
 	mf      *model.MediaFile
@@ -139,6 +177,7 @@ type Stream struct {
 	format  string
 	io.ReadCloser
 	io.Seeker
+	cleanup func() error
 }
 
 func (s *Stream) Seekable() bool      { return s.Seeker != nil }
@@ -148,6 +187,15 @@ func (s *Stream) Name() string        { return s.mf.Title + "." + s.format }
 func (s *Stream) ModTime() time.Time  { return s.mf.UpdatedAt }
 func (s *Stream) EstimatedContentLength() int {
 	return int(s.mf.Duration * float32(s.bitRate) / 8 * 1024)
+}
+
+func (s *Stream) Close() error {
+	err := s.ReadCloser.Close()
+	if s.cleanup != nil {
+		err = errors.Join(err, s.cleanup())
+		s.cleanup = nil
+	}
+	return err
 }
 
 // Serve writes the stream to the HTTP response. For seekable streams it uses http.ServeContent
@@ -268,6 +316,9 @@ func NewTranscodingCache() TranscodingCache {
 				Offset:     job.offset,
 			})
 			if err != nil {
+				if job.cleanup != nil {
+					_ = job.cleanup()
+				}
 				release()
 				log.Error(ctx, "Error starting transcoder", "id", job.mf.ID, err)
 				return nil, os.ErrInvalid
@@ -275,7 +326,7 @@ func NewTranscodingCache() TranscodingCache {
 			// Tie the slot to the ffmpeg process: copyAndClose calls Close
 			// on this reader after io.Copy returns, which is exactly when
 			// ffmpeg has exited (either EOF or context cancellation).
-			return &releasingReadCloser{ReadCloser: out, release: release}, nil
+			return &releasingReadCloser{ReadCloser: out, release: release, cleanup: job.cleanup}, nil
 		})
 }
 

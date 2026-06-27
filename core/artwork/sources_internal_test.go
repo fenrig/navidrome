@@ -5,9 +5,13 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
+	"strings"
 	"testing/fstest"
 
+	"github.com/navidrome/navidrome/core/storage"
+	"github.com/navidrome/navidrome/tests"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -78,6 +82,27 @@ var _ = Describe("fromTag", func() {
 	})
 })
 
+var _ = Describe("fromFFmpegTag", func() {
+	It("uses a storage reader for remote libraries when available", func() {
+		const scheme = "artworkmem"
+		storage.Register(scheme, func(_ url.URL) storage.Storage {
+			return &fakeArtworkStorage{data: []byte("audio-bytes")}
+		})
+
+		ff := tests.NewMockFFmpeg("cover-bytes")
+		f := fromFFmpegTag(GinkgoT().Context(), ff, libraryView{path: scheme + "://bucket/music"}, "Artist/Album/track.mp3")
+		r, path, err := f()
+		Expect(err).ToNot(HaveOccurred())
+		defer r.Close()
+
+		Expect(path).To(Equal("Artist/Album/track.mp3"))
+		b, err := io.ReadAll(r)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(b)).To(Equal("cover-bytes"))
+		Expect(string(ff.LastInput)).To(Equal("audio-bytes"))
+	})
+})
+
 // nonSeekableFS is a single-file fs.FS whose Open returns a non-seekable file.
 type nonSeekableFS struct{ data []byte }
 
@@ -90,3 +115,13 @@ type nonSeekableFile struct{ r *bytes.Reader }
 func (n *nonSeekableFile) Read(p []byte) (int, error) { return n.r.Read(p) }
 func (n *nonSeekableFile) Close() error               { return nil }
 func (n *nonSeekableFile) Stat() (fs.FileInfo, error) { return nil, errors.New("not implemented") }
+
+type fakeArtworkStorage struct {
+	data []byte
+}
+
+func (s *fakeArtworkStorage) FS() (storage.MusicFS, error) { return nil, errors.New("unused") }
+
+func (s *fakeArtworkStorage) Open(_ string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader(string(s.data))), nil
+}

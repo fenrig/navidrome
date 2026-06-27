@@ -23,6 +23,8 @@ type MockFFmpeg struct {
 	ProbeAudioResult *ffmpeg.AudioProbeResult
 	BPM              int
 	ProbeAvailable   bool
+	LastInput        []byte
+	LastTranscode    ffmpeg.TranscodeOptions
 }
 
 func (ff *MockFFmpeg) IsAvailable() bool {
@@ -33,10 +35,11 @@ func (ff *MockFFmpeg) IsProbeAvailable() bool {
 	return ff.ProbeAvailable
 }
 
-func (ff *MockFFmpeg) Transcode(_ context.Context, _ ffmpeg.TranscodeOptions) (io.ReadCloser, error) {
+func (ff *MockFFmpeg) Transcode(_ context.Context, opts ffmpeg.TranscodeOptions) (io.ReadCloser, error) {
 	if ff.Error != nil {
 		return nil, ff.Error
 	}
+	ff.LastTranscode = opts
 	return ff, nil
 }
 
@@ -44,6 +47,18 @@ func (ff *MockFFmpeg) ExtractImage(context.Context, string) (io.ReadCloser, erro
 	if ff.Error != nil {
 		return nil, ff.Error
 	}
+	return ff, nil
+}
+
+func (ff *MockFFmpeg) ExtractImageFromReader(_ context.Context, reader io.Reader) (io.ReadCloser, error) {
+	if ff.Error != nil {
+		return nil, ff.Error
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	ff.LastInput = data
 	return ff, nil
 }
 
@@ -74,6 +89,17 @@ func (ff *MockFFmpeg) ProbeAudioStream(context.Context, string) (*ffmpeg.AudioPr
 func (ff *MockFFmpeg) AnalyzeBPM(context.Context, string) (int, error) {
 	if ff.Error != nil {
 		return 0, ff.Error
+	}
+	return ff.BPM, nil
+}
+
+func (ff *MockFFmpeg) AnalyzeBPMFromReader(_ context.Context, reader io.Reader) (int, error) {
+	if ff.Error != nil {
+		return 0, ff.Error
+	}
+	_, err := io.ReadAll(reader)
+	if err != nil {
+		return 0, err
 	}
 	return ff.BPM, nil
 }

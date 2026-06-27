@@ -2,18 +2,21 @@ package scanner
 
 import (
 	"context"
-	"net/url"
-	"path/filepath"
-	"strings"
+	"io"
 
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/core/ffmpeg"
+	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 )
 
 type bpmAnalyzer interface {
 	AnalyzeBPM(ctx context.Context, filePath string) (int, error)
+}
+
+type bpmReaderAnalyzer interface {
+	AnalyzeBPMFromReader(ctx context.Context, reader io.Reader) (int, error)
 }
 
 var audioBPMAnalyzer bpmAnalyzer = ffmpeg.New()
@@ -23,13 +26,41 @@ func (p *phaseFolders) analyzeBPM(track *model.MediaFile, lib model.Library) {
 		return
 	}
 
-	absPath := localAudioPath(lib.Path, track.Path)
-	if absPath == "" {
-		log.Debug(p.ctx, "Scanner: Skipping BPM analysis for non-local library", "track", track.Path, "library", lib.Name)
-		return
+	if readerAnalyzer, ok := audioBPMAnalyzer.(bpmReaderAnalyzer); ok {
+		s, err := storage.For(lib.Path)
+		if err != nil {
+			log.Warn(p.ctx, "Scanner: Error loading storage for BPM analysis", "track", track.Path, err)
+			return
+		}
+		opener, ok := s.(storage.FileOpener)
+		if ok {
+			file, err := opener.Open(track.Path)
+			if err == nil {
+				defer func() { _ = file.Close() }()
+				bpm, err := readerAnalyzer.AnalyzeBPMFromReader(p.ctx, file)
+				if err != nil {
+					log.Warn(p.ctx, "Scanner: Error analyzing BPM", "track", track.Path, err)
+					return
+				}
+				if bpm > 0 {
+					track.BPM = &bpm
+				}
+				return
+			}
+			log.Warn(p.ctx, "Scanner: Error opening file for BPM analysis", "track", track.Path, err)
+		}
 	}
 
-	bpm, err := audioBPMAnalyzer.AnalyzeBPM(p.ctx, absPath)
+	path, cleanup, err := storage.StagedPath(lib.Path, track.Path)
+	if err != nil {
+		log.Warn(p.ctx, "Scanner: Error staging file for BPM analysis", "track", track.Path, err)
+		return
+	}
+	if cleanup != nil {
+		defer func() { _ = cleanup() }()
+	}
+
+	bpm, err := audioBPMAnalyzer.AnalyzeBPM(p.ctx, path)
 	if err != nil {
 		log.Warn(p.ctx, "Scanner: Error analyzing BPM", "track", track.Path, err)
 		return
@@ -38,18 +69,4 @@ func (p *phaseFolders) analyzeBPM(track *model.MediaFile, lib model.Library) {
 		return
 	}
 	track.BPM = &bpm
-}
-
-func localAudioPath(libPath, trackPath string) string {
-	if strings.Contains(libPath, "://") {
-		u, err := url.Parse(libPath)
-		if err != nil || u.Scheme != "file" {
-			return ""
-		}
-		libPath = u.Path
-		if u.Host != "" {
-			libPath = filepath.Join(string(filepath.Separator)+u.Host, u.Path)
-		}
-	}
-	return filepath.Join(libPath, trackPath)
 }
