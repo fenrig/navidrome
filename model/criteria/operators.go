@@ -60,6 +60,14 @@ func (gt Gt) MarshalJSON() ([]byte, error) {
 
 func (gt Gt) fields() map[string]any { return gt }
 
+type Gte map[string]any
+
+func (gte Gte) MarshalJSON() ([]byte, error) {
+	return marshalExpression("gte", gte)
+}
+
+func (gte Gte) fields() map[string]any { return gte }
+
 type Lt map[string]any
 
 func (lt Lt) MarshalJSON() ([]byte, error) {
@@ -67,6 +75,14 @@ func (lt Lt) MarshalJSON() ([]byte, error) {
 }
 
 func (lt Lt) fields() map[string]any { return lt }
+
+type Lte map[string]any
+
+func (lte Lte) MarshalJSON() ([]byte, error) {
+	return marshalExpression("lte", lte)
+}
+
+func (lte Lte) fields() map[string]any { return lte }
 
 type Before map[string]any
 

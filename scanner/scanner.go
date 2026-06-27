@@ -162,6 +162,9 @@ func (s *scannerImpl) scanFolders(ctx context.Context, fullScan bool, targets []
 		// Update last_scan_completed_at for all libraries
 		s.runUpdateLibraries(ctx, &state),
 
+		// Ensure generated BPM playlists exist and are current
+		s.syncGeneratedBPMPlaylists(ctx),
+
 		// Optimize DB
 		s.runOptimize(ctx),
 	)
@@ -285,6 +288,15 @@ func (s *scannerImpl) runOptimize(ctx context.Context) func() error {
 		start := time.Now()
 		db.Optimize(ctx)
 		log.Debug(ctx, "Scanner: Optimized DB", "elapsed", time.Since(start))
+		return nil
+	}
+}
+
+func (s *scannerImpl) syncGeneratedBPMPlaylists(ctx context.Context) func() error {
+	return func() error {
+		if err := s.pls.SyncGeneratedBPMPlaylists(ctx); err != nil {
+			log.Error(ctx, "Scanner: Error syncing generated BPM playlists", err)
+		}
 		return nil
 	}
 }

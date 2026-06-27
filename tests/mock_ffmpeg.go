@@ -21,6 +21,7 @@ type MockFFmpeg struct {
 	closed           atomic.Bool
 	Error            error
 	ProbeAudioResult *ffmpeg.AudioProbeResult
+	BPM              int
 	ProbeAvailable   bool
 }
 
@@ -68,6 +69,13 @@ func (ff *MockFFmpeg) ProbeAudioStream(context.Context, string) (*ffmpeg.AudioPr
 		return nil, ff.Error
 	}
 	return ff.ProbeAudioResult, nil
+}
+
+func (ff *MockFFmpeg) AnalyzeBPM(context.Context, string) (int, error) {
+	if ff.Error != nil {
+		return 0, ff.Error
+	}
+	return ff.BPM, nil
 }
 
 func (ff *MockFFmpeg) CmdPath() (string, error) {

@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import {
   Edit,
   FormDataConsumer,
@@ -10,8 +11,14 @@ import {
   usePermissions,
   ReferenceInput,
   SelectInput,
+  useMutation,
+  useNotify,
+  useRedirect,
+  useRefresh,
 } from 'react-admin'
 import { isWritable, Title } from '../common'
+import SmartPlaylistRules from './SmartPlaylistRules'
+import { cleanPlaylistPayload } from './smartPlaylistRulesUtils'
 
 const SyncFragment = ({ formData, variant, ...rest }) => {
   return (
@@ -31,8 +38,40 @@ const PlaylistTitle = ({ record }) => {
 const PlaylistEditForm = (props) => {
   const { record } = props
   const { permissions } = usePermissions()
+  const [mutate] = useMutation()
+  const notify = useNotify()
+  const redirect = useRedirect()
+  const refresh = useRefresh()
+
+  const save = useCallback(
+    async (values) => {
+      try {
+        await mutate(
+          {
+            type: 'update',
+            resource: 'playlist',
+            payload: {
+              id: record.id,
+              data: cleanPlaylistPayload(values),
+              previousData: record,
+            },
+          },
+          { returnPromise: true },
+        )
+        notify('ra.notification.updated', 'info', { smart_count: 1 })
+        redirect('list', props.basePath)
+        refresh()
+      } catch (error) {
+        if (error.body?.errors) {
+          return error.body.errors
+        }
+      }
+    },
+    [mutate, notify, props.basePath, record, redirect, refresh],
+  )
+
   return (
-    <SimpleForm redirect="list" variant={'outlined'} {...props}>
+    <SimpleForm save={save} redirect="list" variant={'outlined'} {...props}>
       <TextInput source="name" validate={required()} />
       <TextInput
         multiline
@@ -62,6 +101,7 @@ const PlaylistEditForm = (props) => {
       <FormDataConsumer>
         {(formDataProps) => <SyncFragment {...formDataProps} />}
       </FormDataConsumer>
+      <SmartPlaylistRules record={record} />
     </SimpleForm>
   )
 }

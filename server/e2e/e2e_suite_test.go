@@ -377,6 +377,10 @@ func (n noopFFmpeg) ProbeAudioStream(context.Context, string) (*ffmpeg.AudioProb
 	return nil, errors.New("noop ffmpeg: probe not supported")
 }
 
+func (n noopFFmpeg) AnalyzeBPM(context.Context, string) (int, error) {
+	return 0, errors.New("noop ffmpeg: BPM analysis not supported")
+}
+
 func (n noopFFmpeg) ConvertAnimatedImage(context.Context, io.Reader, int, int) (io.ReadCloser, error) {
 	return nil, errors.New("noop ffmpeg: convert animated image not supported")
 }

@@ -45,6 +45,7 @@ type Playlists interface {
 	ImportFile(ctx context.Context, absolutePath string, sync bool) (*model.Playlist, error)
 	ImportFromFolder(ctx context.Context, folder *model.Folder, filename string) (*model.Playlist, error)
 	ImportM3U(ctx context.Context, reader io.Reader) (*model.Playlist, error)
+	SyncGeneratedBPMPlaylists(ctx context.Context) error
 
 	// REST adapters
 	NewRepository(ctx context.Context) rest.Repository

@@ -27,12 +27,12 @@ var _ = Describe("Playlist Endpoints", Ordered, func() {
 		}
 	})
 
-	It("getPlaylists returns empty list initially", func() {
+	It("getPlaylists does not include the test playlist initially", func() {
 		resp := doReq("getPlaylists")
 
 		Expect(resp.Status).To(Equal(responses.StatusOK))
 		Expect(resp.Playlists).ToNot(BeNil())
-		Expect(resp.Playlists.Playlist).To(BeEmpty())
+		Expect(findPlaylistByName(resp.Playlists.Playlist, "Test Playlist")).To(BeNil())
 	})
 
 	It("createPlaylist creates a new playlist with songs", func() {
@@ -211,8 +211,9 @@ var _ = Describe("Playlist Endpoints", Ordered, func() {
 		resp := doReq("getPlaylists")
 
 		Expect(resp.Status).To(Equal(responses.StatusOK))
-		Expect(resp.Playlists.Playlist).To(HaveLen(1))
-		Expect(resp.Playlists.Playlist[0].Id).To(Equal(playlistID))
+		playlist := findPlaylistByID(resp.Playlists.Playlist, playlistID)
+		Expect(playlist).ToNot(BeNil())
+		Expect(playlist.Id).To(Equal(playlistID))
 	})
 
 	It("deletePlaylist removes the playlist", func() {
@@ -228,11 +229,11 @@ var _ = Describe("Playlist Endpoints", Ordered, func() {
 		Expect(resp.Error).ToNot(BeNil())
 	})
 
-	It("getPlaylists returns empty after deletion", func() {
+	It("getPlaylists does not include deleted playlist", func() {
 		resp := doReq("getPlaylists")
 
 		Expect(resp.Status).To(Equal(responses.StatusOK))
-		Expect(resp.Playlists.Playlist).To(BeEmpty())
+		Expect(findPlaylistByID(resp.Playlists.Playlist, playlistID)).To(BeNil())
 	})
 
 	Describe("Playlist Permissions", Ordered, func() {
@@ -686,3 +687,21 @@ var _ = Describe("Playlist Endpoints", Ordered, func() {
 		)
 	})
 })
+
+func findPlaylistByID(playlists []responses.Playlist, id string) *responses.Playlist {
+	for i := range playlists {
+		if playlists[i].Id == id {
+			return &playlists[i]
+		}
+	}
+	return nil
+}
+
+func findPlaylistByName(playlists []responses.Playlist, name string) *responses.Playlist {
+	for i := range playlists {
+		if playlists[i].Name == name {
+			return &playlists[i]
+		}
+	}
+	return nil
+}

@@ -3,10 +3,12 @@ package ffmpeg
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,6 +51,7 @@ type FFmpeg interface {
 	ConvertAnimatedImage(ctx context.Context, reader io.Reader, maxSize int, quality int) (io.ReadCloser, error)
 	Probe(ctx context.Context, files []string) (string, error)
 	ProbeAudioStream(ctx context.Context, filePath string) (*AudioProbeResult, error)
+	AnalyzeBPM(ctx context.Context, filePath string) (int, error)
 	CmdPath() (string, error)
 	IsAvailable() bool
 	IsProbeAvailable() bool
@@ -68,6 +71,7 @@ const (
 	extractImageCmd     = "ffmpeg -i %s -map 0:v -map -0:V -vcodec copy -f image2pipe -"
 	probeCmd            = "ffmpeg %s -f ffmetadata"
 	probeAudioStreamCmd = "ffprobe -v quiet -select_streams a:0 -print_format json -show_streams -show_format %s"
+	analyzeBPMCmd       = "ffmpeg -v error -i %s -vn -ac 1 -ar 11025 -t 120 -f s16le -"
 )
 
 type ffmpeg struct{}
@@ -169,6 +173,109 @@ func (e *ffmpeg) ProbeAudioStream(ctx context.Context, filePath string) (*AudioP
 		return nil, fmt.Errorf("running ffprobe on %q: %w", filePath, err)
 	}
 	return parseProbeOutput(output)
+}
+
+func (e *ffmpeg) AnalyzeBPM(ctx context.Context, filePath string) (int, error) {
+	if _, err := ffmpegCmd(); err != nil {
+		return 0, err
+	}
+	if err := fileExists(filePath); err != nil {
+		return 0, err
+	}
+	args := createFFmpegCommand(analyzeBPMCmd, filePath, 0, 0)
+	r, err := e.start(ctx, args)
+	if err != nil {
+		return 0, err
+	}
+	defer r.Close()
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return 0, fmt.Errorf("decoding audio for BPM analysis: %w", err)
+	}
+	bpm := estimateBPMFromS16LE(data, 11025)
+	if bpm == 0 {
+		return 0, fmt.Errorf("could not estimate BPM")
+	}
+	return bpm, nil
+}
+
+func estimateBPMFromS16LE(data []byte, sampleRate int) int {
+	if len(data) < sampleRate*10*2 {
+		return 0
+	}
+
+	const (
+		frameSize = 1024
+		hopSize   = 512
+		minBPM    = 60
+		maxBPM    = 200
+	)
+
+	samples := len(data) / 2
+	if samples < frameSize*2 {
+		return 0
+	}
+	frames := 1 + (samples-frameSize)/hopSize
+	energy := make([]float64, frames)
+	for i := 0; i < frames; i++ {
+		start := i * hopSize
+		var sum float64
+		for j := 0; j < frameSize; j++ {
+			offset := (start + j) * 2
+			s := float64(int16(binary.LittleEndian.Uint16(data[offset:]))) / 32768
+			sum += s * s
+		}
+		energy[i] = math.Sqrt(sum / frameSize)
+	}
+
+	flux := make([]float64, len(energy))
+	var mean float64
+	for i := 1; i < len(energy); i++ {
+		d := energy[i] - energy[i-1]
+		if d > 0 {
+			flux[i] = d
+			mean += d
+		}
+	}
+	mean /= float64(len(flux))
+	for i := range flux {
+		if flux[i] < mean {
+			flux[i] = 0
+		}
+	}
+
+	framesPerSecond := float64(sampleRate) / hopSize
+	minLag := int(math.Round(60 * framesPerSecond / maxBPM))
+	maxLag := int(math.Round(60 * framesPerSecond / minBPM))
+	bestLag := 0
+	bestScore := 0.0
+	for lag := minLag; lag <= maxLag && lag < len(flux); lag++ {
+		var score float64
+		for i := lag; i < len(flux); i++ {
+			score += flux[i] * flux[i-lag]
+		}
+		bpm := 60 * framesPerSecond / float64(lag)
+		score *= tempoPreference(bpm)
+		if score > bestScore {
+			bestScore = score
+			bestLag = lag
+		}
+	}
+	if bestLag == 0 || bestScore == 0 {
+		return 0
+	}
+	return int(math.Round(60 * framesPerSecond / float64(bestLag)))
+}
+
+func tempoPreference(bpm float64) float64 {
+	switch {
+	case bpm >= 80 && bpm <= 160:
+		return 1
+	case bpm < 80:
+		return bpm / 80
+	default:
+		return 160 / bpm
+	}
 }
 
 type probeOutput struct {

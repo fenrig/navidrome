@@ -158,8 +158,12 @@ func (c smartPlaylistCriteria) exprSQL(expr criteria.Expression) (squirrel.Sqliz
 		return isNotExpr(e)
 	case criteria.Gt:
 		return comparisonExpr(e, cmpGt)
+	case criteria.Gte:
+		return comparisonExpr(e, cmpGe)
 	case criteria.Lt:
 		return comparisonExpr(e, cmpLt)
+	case criteria.Lte:
+		return comparisonExpr(e, cmpLe)
 	case criteria.Before:
 		return comparisonExpr(e, cmpLt)
 	case criteria.After:

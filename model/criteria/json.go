@@ -47,8 +47,12 @@ func unmarshalExpression(opName string, rawValue json.RawMessage) Expression {
 		return IsNot(m)
 	case "gt":
 		return Gt(m)
+	case "gte":
+		return Gte(m)
 	case "lt":
 		return Lt(m)
+	case "lte":
+		return Lte(m)
 	case "contains":
 		return Contains(m)
 	case "notcontains":

@@ -212,6 +212,48 @@
         "sync": "Auto-import",
         "path": "Import from"
       },
+      "smart": {
+        "enabled": "Automatic playlist",
+        "rules": "Automatic rules",
+        "lovedOnly": "Favorite songs only",
+        "title": "Title contains",
+        "titleHelp": "Comma-separated terms all have to match",
+        "genre": "Genre",
+        "genreHelp": "Comma-separated values match any genre",
+        "artist": "Artist",
+        "artistHelp": "Matches any artist containing this text",
+        "bpmPreset": {
+          "label": "BPM range",
+          "custom": "Custom",
+          "downtempo": "Downtempo (60-89)",
+          "midtempo": "Midtempo (90-114)",
+          "house": "House / disco (115-129)",
+          "trance": "Trance / techno (130-144)",
+          "fast": "Fast (145+)"
+        },
+        "bpmMin": "Minimum BPM",
+        "bpmMax": "Maximum BPM",
+        "tagField": "Tag field",
+        "tagFieldHelp": "For mapped tags such as label, mood, or grouping",
+        "tagValue": "Tag value",
+        "sortBy": "Sort by",
+        "orderBy": "Order",
+        "limit": "Limit",
+        "limitHelp": "Leave empty for no limit",
+        "sort": {
+          "random": "Random",
+          "title": "Title",
+          "dateAdded": "Date added",
+          "lastPlayed": "Last played",
+          "playCount": "Play count",
+          "rating": "Rating",
+          "bpm": "BPM"
+        },
+        "order": {
+          "asc": "Ascending",
+          "desc": "Descending"
+        }
+      },
       "actions": {
         "selectPlaylist": "Select a playlist:",
         "addNewPlaylist": "Create \"%{name}\"",
