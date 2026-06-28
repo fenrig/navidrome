@@ -2,9 +2,9 @@ package playlists
 
 import (
 	"context"
+	"io"
 	"testing"
 
-	"github.com/navidrome/navidrome/core"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/tests"
@@ -110,7 +110,7 @@ func TestSyncGeneratedDiscoveryPlaylist(t *testing.T) {
 		MockedMediaFile: trackRepo,
 		MockedPlaylist:  playlistRepo,
 	}
-	ps := NewPlaylists(ds, core.NewImageUploadService())
+	ps := NewPlaylists(ds, noopImageUploadService{})
 
 	ctx = request.WithUser(ctx, model.User{ID: "admin", UserName: "admin", IsAdmin: true})
 	if err := ps.SyncGeneratedDiscoveryPlaylist(ctx); err != nil {
@@ -151,9 +151,11 @@ func testMixTrack(id, title, artist, album, genre, label string, bpm, year int, 
 		BPM:         intPtr(bpm),
 		Year:        year,
 		ReleaseYear: year,
-		PlayCount:   playCount,
-		Starred:     starred,
-		Rating:      rating,
+		Annotations: model.Annotations{
+			PlayCount: playCount,
+			Starred:   starred,
+			Rating:    rating,
+		},
 		Participants: model.Participants{
 			model.RoleArtist:      []model.Participant{{Artist: model.Artist{ID: artist, Name: artist}}},
 			model.RoleAlbumArtist: []model.Participant{{Artist: model.Artist{ID: artist, Name: artist}}},
@@ -189,3 +191,11 @@ func countArtist(tracks model.MediaFiles, artist string) int {
 	}
 	return count
 }
+
+type noopImageUploadService struct{}
+
+func (noopImageUploadService) SetImage(context.Context, string, string, string, string, io.Reader, string) (string, error) {
+	return "", nil
+}
+
+func (noopImageUploadService) RemoveImage(context.Context, string) error { return nil }

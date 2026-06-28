@@ -297,8 +297,10 @@ var _ = Describe("Queue Endpoints", func() {
 						Genres:      model.Genres{{Name: "Genre X"}},
 						Tags:        model.Tags{model.TagGenre: []string{"Genre X"}},
 						BPM:         intPtrLocal(140),
-						PlayCount:   20,
-						Starred:     true,
+						Annotations: model.Annotations{
+							PlayCount: 20,
+							Starred:   true,
+						},
 					},
 					{ID: "existing", Title: "Existing", Artist: "Artist Z", ArtistID: "Artist Z", AlbumID: "Album Z"},
 				},
@@ -315,8 +317,10 @@ var _ = Describe("Queue Endpoints", func() {
 					Genres:      model.Genres{{Name: "Genre X"}},
 					Tags:        model.Tags{model.TagGenre: []string{"Genre X"}},
 					BPM:         intPtrLocal(140),
-					PlayCount:   20,
-					Starred:     true,
+					Annotations: model.Annotations{
+						PlayCount: 20,
+						Starred:   true,
+					},
 				},
 				{
 					ID:          "recommended",

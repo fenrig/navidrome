@@ -75,7 +75,7 @@ func testQueueTrack(id, title, artist, album, genre string, bpm int, starred boo
 		Genres:      model.Genres{{Name: genre}},
 		Tags:        model.Tags{model.TagGenre: []string{genre}},
 		BPM:         intPtr(bpm),
-		Starred:     starred,
+		Annotations: model.Annotations{Starred: starred},
 	}
 }
 

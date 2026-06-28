@@ -117,6 +117,10 @@ type fakeReaderBPMAnalyzer struct {
 	data  string
 }
 
+func (f *fakeReaderBPMAnalyzer) AnalyzeBPM(_ context.Context, filePath string) (int, error) {
+	return f.bpm, f.err
+}
+
 func (f *fakeReaderBPMAnalyzer) AnalyzeBPMFromReader(_ context.Context, reader io.Reader) (int, error) {
 	f.calls++
 	buf, err := io.ReadAll(reader)
