@@ -1,14 +1,19 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import { useDispatch } from 'react-redux'
 import { useGetOne } from 'react-admin'
 import { GlobalHotKeys } from 'react-hotkeys'
 import IconButton from '@material-ui/core/IconButton'
+import Tooltip from '@material-ui/core/Tooltip'
 import { useMediaQuery } from '@material-ui/core'
 import { RiSaveLine } from 'react-icons/ri'
 import { LoveButton, useToggleLove } from '../common'
-import { openSaveQueueDialog } from '../actions'
+import { addTracks, openSaveQueueDialog } from '../actions'
 import { keyMap } from '../hotkeys'
 import { makeStyles } from '@material-ui/core/styles'
+import { httpClient } from '../dataProvider'
+import { REST_URL } from '../consts'
+import { useNotify, useTranslate } from 'react-admin'
+import QueueMusicIcon from '@material-ui/icons/QueueMusic'
 
 const useStyles = makeStyles((theme) => ({
   toolbar: {
@@ -57,10 +62,13 @@ const useStyles = makeStyles((theme) => ({
 
 const PlayerToolbar = ({ id, isRadio }) => {
   const dispatch = useDispatch()
+  const translate = useTranslate()
+  const notify = useNotify()
   const { data, loading } = useGetOne('song', id, { enabled: !!id && !isRadio })
   const [toggleLove, toggling] = useToggleLove('song', data)
   const isDesktop = useMediaQuery('(min-width:810px)')
   const classes = useStyles()
+  const [autofilling, setAutofilling] = useState(false)
 
   const handlers = {
     TOGGLE_LOVE: useCallback(() => toggleLove(), [toggleLove]),
@@ -72,6 +80,31 @@ const PlayerToolbar = ({ id, isRadio }) => {
       e.stopPropagation()
     },
     [dispatch],
+  )
+
+  const handleAutofillQueue = useCallback(
+    async (e) => {
+      e.stopPropagation()
+      setAutofilling(true)
+      try {
+        const response = await httpClient(`${REST_URL}/queue/autofill?count=1`, {
+          method: 'POST',
+        })
+        const tracks = response.json || []
+        if (tracks.length > 0) {
+          const data = tracks.reduce((acc, track) => {
+            acc[track.id] = track
+            return acc
+          }, {})
+          dispatch(addTracks(data, tracks.map((track) => track.id)))
+        }
+      } catch {
+        notify('ra.page.error', { type: 'warning' })
+      } finally {
+        setAutofilling(false)
+      }
+    },
+    [dispatch, notify],
   )
 
   const buttonClass = isDesktop ? classes.button : classes.mobileButton
@@ -87,6 +120,26 @@ const PlayerToolbar = ({ id, isRadio }) => {
     >
       <RiSaveLine className={!isDesktop ? classes.mobileIcon : undefined} />
     </IconButton>
+  )
+
+  const autofillQueueButton = (
+    <Tooltip
+      title={translate('resources.playlist.actions.autofillQueue', {
+        _: 'Autofill queue',
+      })}
+    >
+      <span>
+        <IconButton
+          size={isDesktop ? 'small' : undefined}
+          onClick={handleAutofillQueue}
+          disabled={isRadio || autofilling}
+          data-testid="autofill-queue-button"
+          className={buttonClass}
+        >
+          <QueueMusicIcon className={!isDesktop ? classes.mobileIcon : undefined} />
+        </IconButton>
+      </span>
+    </Tooltip>
   )
 
   const loveButton = (
@@ -105,11 +158,13 @@ const PlayerToolbar = ({ id, isRadio }) => {
       {isDesktop ? (
         <li className={`${listItemClass} item`}>
           {saveQueueButton}
+          {autofillQueueButton}
           {loveButton}
         </li>
       ) : (
         <>
           <li className={`${listItemClass} item`}>{saveQueueButton}</li>
+          <li className={`${listItemClass} item`}>{autofillQueueButton}</li>
           <li className={`${listItemClass} item`}>{loveButton}</li>
         </>
       )}

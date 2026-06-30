@@ -1,11 +1,12 @@
 import React from 'react'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import { useMediaQuery } from '@material-ui/core'
 import { useGetOne } from 'react-admin'
 import { useDispatch } from 'react-redux'
 import { useToggleLove } from '../common'
-import { openSaveQueueDialog } from '../actions'
+import { addTracks, openSaveQueueDialog } from '../actions'
 import PlayerToolbar from './PlayerToolbar'
+import { httpClient } from '../dataProvider'
 
 // Mock dependencies
 vi.mock('@material-ui/core', async () => {
@@ -18,6 +19,8 @@ vi.mock('@material-ui/core', async () => {
 
 vi.mock('react-admin', () => ({
   useGetOne: vi.fn(),
+  useNotify: () => vi.fn(),
+  useTranslate: () => (key, options) => options?._ || key,
 }))
 
 vi.mock('react-redux', () => ({
@@ -34,7 +37,12 @@ vi.mock('../common', () => ({
 }))
 
 vi.mock('../actions', () => ({
+  addTracks: vi.fn((data, ids) => ({ type: 'PLAYER_ADD_TRACKS', data, ids })),
   openSaveQueueDialog: vi.fn(),
+}))
+
+vi.mock('../dataProvider', () => ({
+  httpClient: vi.fn(),
 }))
 
 vi.mock('react-hotkeys', () => ({
@@ -52,6 +60,7 @@ describe('<PlayerToolbar />', () => {
     useToggleLove.mockReturnValue([mockToggleLove, false])
     useDispatch.mockReturnValue(mockDispatch)
     openSaveQueueDialog.mockReturnValue({ type: 'OPEN_SAVE_QUEUE_DIALOG' })
+    httpClient.mockResolvedValue({ json: [{ id: 'r1', title: 'Recommended' }] })
   })
 
   afterEach(cleanup)
@@ -102,6 +111,29 @@ describe('<PlayerToolbar />', () => {
         type: 'OPEN_SAVE_QUEUE_DIALOG',
       })
     })
+
+    it('autofills the queue when autofill button is clicked', async () => {
+      render(<PlayerToolbar id="song-1" />)
+
+      fireEvent.click(screen.getByTestId('autofill-queue-button'))
+
+      await waitFor(() => {
+        expect(httpClient).toHaveBeenCalledWith(
+          '/api/queue/autofill?count=1',
+          expect.objectContaining({ method: 'POST' }),
+        )
+      })
+
+      expect(addTracks).toHaveBeenCalledWith(
+        { r1: { id: 'r1', title: 'Recommended' } },
+        ['r1'],
+      )
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'PLAYER_ADD_TRACKS',
+        data: { r1: { id: 'r1', title: 'Recommended' } },
+        ids: ['r1'],
+      })
+    })
   })
 
   describe('Mobile layout', () => {
@@ -114,10 +146,11 @@ describe('<PlayerToolbar />', () => {
 
       // Each button should be in its own list item
       const listItems = screen.getAllByRole('listitem')
-      expect(listItems).toHaveLength(2)
+      expect(listItems).toHaveLength(3)
 
       // Verify both buttons are rendered
       expect(screen.getByTestId('save-queue-button')).toBeInTheDocument()
+      expect(screen.getByTestId('autofill-queue-button')).toBeInTheDocument()
       expect(screen.getByTestId('love-button')).toBeInTheDocument()
 
       // Verify mobile classes are applied

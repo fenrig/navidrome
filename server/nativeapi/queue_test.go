@@ -357,11 +357,12 @@ var _ = Describe("Queue Endpoints", func() {
 			w := httptest.NewRecorder()
 
 			autofillQueue(ds)(w, req)
-			Expect(w.Code).To(Equal(http.StatusNoContent))
+			Expect(w.Code).To(Equal(http.StatusOK))
 			Expect(repo.Queue).ToNot(BeNil())
 			Expect(repo.Queue.Items).To(HaveLen(3))
 			Expect(repo.Queue.Items[2].ID).To(Equal("recommended"))
 			Expect(repo.LastCols).To(ConsistOf("items"))
+			Expect(w.Body.String()).To(ContainSubstring(`"recommended"`))
 		})
 	})
 
