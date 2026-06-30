@@ -93,6 +93,7 @@ func runNavidrome(ctx context.Context) {
 	if conf.Server.Scanner.Enabled {
 		g.Go(startScanWatcher(ctx))
 		g.Go(schedulePeriodicScan(ctx))
+		g.Go(schedulePeriodicBPMScan(ctx))
 	} else {
 		log.Warn(ctx, "Automatic Scanning is DISABLED")
 	}
@@ -162,6 +163,33 @@ func schedulePeriodicScan(ctx context.Context) func() error {
 		})
 		if err != nil {
 			log.Error(ctx, "Error scheduling periodic scan", err)
+		}
+		return nil
+	}
+}
+
+// schedulePeriodicBPMScan schedules a periodic BPM backfill, if configured.
+func schedulePeriodicBPMScan(ctx context.Context) func() error {
+	return func() error {
+		if !conf.Server.Scanner.AnalyzeBPM {
+			log.Debug(ctx, "BPM backfill is DISABLED")
+			return nil
+		}
+		schedule := conf.Server.Scanner.BPMSchedule
+		if schedule == "" {
+			log.Info(ctx, "Periodic BPM backfill is DISABLED")
+			return nil
+		}
+
+		schedulerInstance := scheduler.GetInstance()
+		log.Info("Scheduling periodic BPM backfill", "schedule", schedule)
+		_, err := schedulerInstance.Add(schedule, func() {
+			if err := scanner.ScanMissingBPM(ctx, CreateDataStore()); err != nil {
+				log.Error(ctx, "Error executing periodic BPM backfill", err)
+			}
+		})
+		if err != nil {
+			log.Error(ctx, "Error scheduling periodic BPM backfill", err)
 		}
 		return nil
 	}

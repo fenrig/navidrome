@@ -80,6 +80,20 @@ func (m *MockMediaFileRepo) GetAllByTags(_ model.TagName, _ []string, options ..
 	return m.GetAll(options...)
 }
 
+func (m *MockMediaFileRepo) GetCursor(qo ...model.QueryOptions) (model.MediaFileCursor, error) {
+	mfs, err := m.GetAll(qo...)
+	if err != nil {
+		return nil, err
+	}
+	return func(yield func(model.MediaFile, error) bool) {
+		for _, mf := range mfs {
+			if !yield(mf, nil) {
+				break
+			}
+		}
+	}, nil
+}
+
 func (m *MockMediaFileRepo) GetAll(qo ...model.QueryOptions) (model.MediaFiles, error) {
 	if len(qo) > 0 {
 		m.Options = qo[0]

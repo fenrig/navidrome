@@ -155,6 +155,7 @@ type configOptions struct {
 type scannerOptions struct {
 	Enabled            bool
 	Schedule           string
+	BPMSchedule        string
 	WatcherWait        time.Duration
 	ScanOnStartup      bool
 	Extractor          string
@@ -816,6 +817,7 @@ func setViperDefaults() {
 	viper.SetDefault("jukebox.adminonly", true)
 	viper.SetDefault("scanner.enabled", true)
 	viper.SetDefault("scanner.schedule", "0")
+	viper.SetDefault("scanner.bmpschedule", "")
 	viper.SetDefault("scanner.extractor", consts.DefaultScannerExtractor)
 	viper.SetDefault("scanner.analyzebpm", false)
 	viper.SetDefault("scanner.watcherwait", consts.DefaultWatcherWait)
