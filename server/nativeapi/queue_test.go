@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/navidrome/navidrome/core"
+	"github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/tests"
@@ -17,6 +19,7 @@ var _ = Describe("Queue Endpoints", func() {
 	var (
 		ds       *tests.MockDataStore
 		repo     *tests.MockPlayQueueRepo
+		plRepo   *tests.MockPlaylistRepo
 		mfRepo   *tests.MockMediaFileRepo
 		user     model.User
 		userRepo *tests.MockedUserRepo
@@ -24,11 +27,12 @@ var _ = Describe("Queue Endpoints", func() {
 
 	BeforeEach(func() {
 		repo = &tests.MockPlayQueueRepo{}
+		plRepo = tests.CreateMockPlaylistRepo()
 		mfRepo = tests.CreateMockMediaFileRepo()
 		user = model.User{ID: "u1", UserName: "user"}
 		userRepo = tests.CreateMockUserRepo()
 		_ = userRepo.Put(&user)
-		ds = &tests.MockDataStore{MockedPlayQueue: repo, MockedMediaFile: mfRepo, MockedUser: userRepo, MockedProperty: &tests.MockedPropertyRepo{}}
+		ds = &tests.MockDataStore{MockedPlayQueue: repo, MockedPlaylist: plRepo, MockedMediaFile: mfRepo, MockedUser: userRepo, MockedProperty: &tests.MockedPropertyRepo{}}
 	})
 
 	Describe("POST /queue", func() {
@@ -358,6 +362,47 @@ var _ = Describe("Queue Endpoints", func() {
 			Expect(repo.Queue.Items).To(HaveLen(3))
 			Expect(repo.Queue.Items[2].ID).To(Equal("recommended"))
 			Expect(repo.LastCols).To(ConsistOf("items"))
+		})
+	})
+
+	Describe("POST /queue/save", func() {
+		It("saves the current queue as a playlist", func() {
+			repo.Queue = &model.PlayQueue{
+				UserID: user.ID,
+				Items: model.MediaFiles{
+					{ID: "s1", Title: "Song 1"},
+					{ID: "s2", Title: "Song 2"},
+				},
+			}
+			payload := saveQueueAsPlaylistPayload{Name: "Road Trip"}
+			body, _ := json.Marshal(payload)
+			req := httptest.NewRequest("POST", "/queue/save", bytes.NewReader(body))
+			req = req.WithContext(request.WithUser(req.Context(), user))
+			w := httptest.NewRecorder()
+
+			saveQueueAsPlaylist(ds, playlists.NewPlaylists(ds, core.NewImageUploadService()))(w, req)
+
+			Expect(w.Code).To(Equal(http.StatusCreated))
+			Expect(plRepo.Last).ToNot(BeNil())
+			Expect(plRepo.Last.Name).To(Equal("Road Trip"))
+			Expect(plRepo.Last.OwnerID).To(Equal(user.ID))
+			Expect(plRepo.Last.Tracks).To(HaveLen(2))
+			Expect(plRepo.Last.Tracks[0].MediaFileID).To(Equal("s1"))
+			Expect(plRepo.Last.Tracks[1].MediaFileID).To(Equal("s2"))
+		})
+
+		It("returns no content for an empty queue", func() {
+			repo.Queue = &model.PlayQueue{UserID: user.ID}
+			payload := saveQueueAsPlaylistPayload{Name: "Empty"}
+			body, _ := json.Marshal(payload)
+			req := httptest.NewRequest("POST", "/queue/save", bytes.NewReader(body))
+			req = req.WithContext(request.WithUser(req.Context(), user))
+			w := httptest.NewRecorder()
+
+			saveQueueAsPlaylist(ds, playlists.NewPlaylists(ds, core.NewImageUploadService()))(w, req)
+
+			Expect(w.Code).To(Equal(http.StatusNoContent))
+			Expect(plRepo.Last).To(BeNil())
 		})
 	})
 })

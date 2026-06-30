@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/Masterminds/squirrel"
 	playlistsvc "github.com/navidrome/navidrome/core/playlists"
@@ -20,6 +21,10 @@ type updateQueuePayload struct {
 	Ids      *[]string `json:"ids,omitempty"`
 	Current  *int      `json:"current,omitempty"`
 	Position *int64    `json:"position,omitempty"`
+}
+
+type saveQueueAsPlaylistPayload struct {
+	Name string `json:"name,omitempty"`
 }
 
 // validateCurrentIndex validates that the current index is within bounds of the items array.
@@ -290,5 +295,49 @@ func autofillQueue(ds model.DataStore) http.HandlerFunc {
 		}
 
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func saveQueueAsPlaylist(ds model.DataStore, pls playlistsvc.Playlists) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		user, _ := request.UserFrom(ctx)
+
+		var payload saveQueueAsPlaylistPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		queue, err := ds.PlayQueue(ctx).RetrieveWithMediaFiles(user.ID)
+		if err != nil && !errors.Is(err, model.ErrNotFound) {
+			log.Error(ctx, "Error retrieving queue for save-as-playlist", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if queue == nil || len(queue.Items) == 0 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		name := strings.TrimSpace(payload.Name)
+		if name == "" {
+			name = "Dynamic Mix"
+		}
+
+		ids := slice.Map(queue.Items, func(mf model.MediaFile) string { return mf.ID })
+		playlistID, err := pls.Create(ctx, "", name, ids)
+		if err != nil {
+			log.Error(ctx, "Error saving queue as playlist", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		}{ID: playlistID, Name: name})
 	}
 }
