@@ -2,9 +2,9 @@ import React from 'react'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import { useMediaQuery } from '@material-ui/core'
 import { useGetOne } from 'react-admin'
-import { useDispatch } from 'react-redux'
+import { useDispatch, useSelector } from 'react-redux'
 import { useToggleLove } from '../common'
-import { addTracks, openSaveQueueDialog } from '../actions'
+import { addTracks, openSaveQueueDialog, toggleQueueAutofill } from '../actions'
 import PlayerToolbar from './PlayerToolbar'
 import { httpClient } from '../dataProvider'
 
@@ -25,6 +25,7 @@ vi.mock('react-admin', () => ({
 
 vi.mock('react-redux', () => ({
   useDispatch: vi.fn(),
+  useSelector: vi.fn(),
 }))
 
 vi.mock('../common', () => ({
@@ -38,6 +39,7 @@ vi.mock('../common', () => ({
 
 vi.mock('../actions', () => ({
   addTracks: vi.fn((data, ids) => ({ type: 'PLAYER_ADD_TRACKS', data, ids })),
+  toggleQueueAutofill: vi.fn(() => ({ type: 'PLAYER_TOGGLE_QUEUE_AUTOFILL' })),
   openSaveQueueDialog: vi.fn(),
 }))
 
@@ -59,7 +61,13 @@ describe('<PlayerToolbar />', () => {
     useGetOne.mockReturnValue({ data: mockSongData, loading: false })
     useToggleLove.mockReturnValue([mockToggleLove, false])
     useDispatch.mockReturnValue(mockDispatch)
+    useSelector.mockImplementation((selector) =>
+      selector({ player: { autofillEnabled: false } }),
+    )
     openSaveQueueDialog.mockReturnValue({ type: 'OPEN_SAVE_QUEUE_DIALOG' })
+    toggleQueueAutofill.mockReturnValue({
+      type: 'PLAYER_TOGGLE_QUEUE_AUTOFILL',
+    })
     httpClient.mockResolvedValue({ json: [{ id: 'r1', title: 'Recommended' }] })
   })
 
@@ -71,6 +79,7 @@ describe('<PlayerToolbar />', () => {
     })
 
     it('renders desktop toolbar with both buttons', () => {
+      // Actually three controls: save, autofill once, and dynamic toggle.
       render(<PlayerToolbar id="song-1" />)
 
       // Both buttons should be in a single list item
@@ -79,6 +88,8 @@ describe('<PlayerToolbar />', () => {
 
       // Verify both buttons are rendered
       expect(screen.getByTestId('save-queue-button')).toBeInTheDocument()
+      expect(screen.getByTestId('autofill-queue-button')).toBeInTheDocument()
+      expect(screen.getByTestId('dynamic-queue-button')).toBeInTheDocument()
       expect(screen.getByTestId('love-button')).toBeInTheDocument()
 
       // Verify desktop classes are applied
@@ -109,6 +120,17 @@ describe('<PlayerToolbar />', () => {
 
       expect(mockDispatch).toHaveBeenCalledWith({
         type: 'OPEN_SAVE_QUEUE_DIALOG',
+      })
+    })
+
+    it('toggles dynamic queue mode when toggle button is clicked', () => {
+      render(<PlayerToolbar id="song-1" />)
+
+      fireEvent.click(screen.getByTestId('dynamic-queue-button'))
+
+      expect(toggleQueueAutofill).toHaveBeenCalled()
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'PLAYER_TOGGLE_QUEUE_AUTOFILL',
       })
     })
 
@@ -146,11 +168,12 @@ describe('<PlayerToolbar />', () => {
 
       // Each button should be in its own list item
       const listItems = screen.getAllByRole('listitem')
-      expect(listItems).toHaveLength(3)
+      expect(listItems).toHaveLength(4)
 
       // Verify both buttons are rendered
       expect(screen.getByTestId('save-queue-button')).toBeInTheDocument()
       expect(screen.getByTestId('autofill-queue-button')).toBeInTheDocument()
+      expect(screen.getByTestId('dynamic-queue-button')).toBeInTheDocument()
       expect(screen.getByTestId('love-button')).toBeInTheDocument()
 
       // Verify mobile classes are applied

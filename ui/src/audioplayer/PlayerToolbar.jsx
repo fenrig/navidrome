@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react'
-import { useDispatch } from 'react-redux'
+import { useDispatch, useSelector } from 'react-redux'
 import { useGetOne } from 'react-admin'
 import { GlobalHotKeys } from 'react-hotkeys'
 import IconButton from '@material-ui/core/IconButton'
@@ -7,13 +7,14 @@ import Tooltip from '@material-ui/core/Tooltip'
 import { useMediaQuery } from '@material-ui/core'
 import { RiSaveLine } from 'react-icons/ri'
 import { LoveButton, useToggleLove } from '../common'
-import { addTracks, openSaveQueueDialog } from '../actions'
+import { addTracks, openSaveQueueDialog, toggleQueueAutofill } from '../actions'
 import { keyMap } from '../hotkeys'
 import { makeStyles } from '@material-ui/core/styles'
 import { httpClient } from '../dataProvider'
 import { REST_URL } from '../consts'
 import { useNotify, useTranslate } from 'react-admin'
 import QueueMusicIcon from '@material-ui/icons/QueueMusic'
+import AutorenewIcon from '@material-ui/icons/Autorenew'
 
 const useStyles = makeStyles((theme) => ({
   toolbar: {
@@ -62,6 +63,9 @@ const useStyles = makeStyles((theme) => ({
 
 const PlayerToolbar = ({ id, isRadio }) => {
   const dispatch = useDispatch()
+  const autofillEnabled = useSelector(
+    (state) => state.player?.autofillEnabled ?? false,
+  )
   const translate = useTranslate()
   const notify = useNotify()
   const { data, loading } = useGetOne('song', id, { enabled: !!id && !isRadio })
@@ -77,6 +81,14 @@ const PlayerToolbar = ({ id, isRadio }) => {
   const handleSaveQueue = useCallback(
     (e) => {
       dispatch(openSaveQueueDialog())
+      e.stopPropagation()
+    },
+    [dispatch],
+  )
+
+  const handleToggleAutofill = useCallback(
+    (e) => {
+      dispatch(toggleQueueAutofill())
       e.stopPropagation()
     },
     [dispatch],
@@ -142,6 +154,30 @@ const PlayerToolbar = ({ id, isRadio }) => {
     </Tooltip>
   )
 
+  const dynamicQueueButton = (
+    <Tooltip
+      title={translate('resources.playlist.actions.autofillOnEnd', {
+        _: 'Autofill when last song starts',
+      })}
+    >
+      <span>
+        <IconButton
+          size={isDesktop ? 'small' : undefined}
+          onClick={handleToggleAutofill}
+          disabled={isRadio}
+          data-testid="dynamic-queue-button"
+          className={buttonClass}
+          aria-pressed={autofillEnabled}
+          color={autofillEnabled ? 'primary' : 'default'}
+        >
+          <AutorenewIcon
+            className={!isDesktop ? classes.mobileIcon : undefined}
+          />
+        </IconButton>
+      </span>
+    </Tooltip>
+  )
+
   const loveButton = (
     <LoveButton
       record={data}
@@ -159,12 +195,14 @@ const PlayerToolbar = ({ id, isRadio }) => {
         <li className={`${listItemClass} item`}>
           {saveQueueButton}
           {autofillQueueButton}
+          {dynamicQueueButton}
           {loveButton}
         </li>
       ) : (
         <>
           <li className={`${listItemClass} item`}>{saveQueueButton}</li>
           <li className={`${listItemClass} item`}>{autofillQueueButton}</li>
+          <li className={`${listItemClass} item`}>{dynamicQueueButton}</li>
           <li className={`${listItemClass} item`}>{loveButton}</li>
         </>
       )}

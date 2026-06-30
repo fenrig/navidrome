@@ -7,6 +7,7 @@ export const PLAYER_PLAY_TRACKS = 'PLAYER_PLAY_TRACKS'
 export const PLAYER_CURRENT = 'PLAYER_CURRENT'
 export const PLAYER_SET_VOLUME = 'PLAYER_SET_VOLUME'
 export const PLAYER_SET_MODE = 'PLAYER_SET_MODE'
+export const PLAYER_TOGGLE_QUEUE_AUTOFILL = 'PLAYER_TOGGLE_QUEUE_AUTOFILL'
 export const TRANSCODING_SET_PROFILE = 'TRANSCODING_SET_PROFILE'
 export const PLAYER_REFRESH_QUEUE = 'PLAYER_REFRESH_QUEUE'
 
@@ -103,6 +104,10 @@ export const setVolume = (volume) => ({
 export const setPlayMode = (mode) => ({
   type: PLAYER_SET_MODE,
   data: { mode },
+})
+
+export const toggleQueueAutofill = () => ({
+  type: PLAYER_TOGGLE_QUEUE_AUTOFILL,
 })
 
 export const setTranscodingProfile = (profile) => ({

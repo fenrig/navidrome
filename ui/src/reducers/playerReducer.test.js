@@ -4,6 +4,7 @@ import {
   PLAYER_SYNC_QUEUE,
   PLAYER_CURRENT,
   PLAYER_REFRESH_QUEUE,
+  PLAYER_TOGGLE_QUEUE_AUTOFILL,
 } from '../actions'
 
 describe('playerReducer', () => {
@@ -222,6 +223,20 @@ describe('playerReducer', () => {
       const action = { type: PLAYER_REFRESH_QUEUE, data: {} }
       const result = playerReducer(state, action)
       expect(result.playIndex).toBe(0)
+    })
+  })
+
+  describe('PLAYER_TOGGLE_QUEUE_AUTOFILL', () => {
+    it('toggles the autofill flag', () => {
+      const state = {
+        queue: [],
+        current: {},
+        clear: false,
+        volume: 1,
+        autofillEnabled: false,
+      }
+      const result = playerReducer(state, { type: PLAYER_TOGGLE_QUEUE_AUTOFILL })
+      expect(result.autofillEnabled).toBe(true)
     })
   })
 })

@@ -18,6 +18,7 @@ import config from '../config'
 import useStyle from './styles'
 import AudioTitle from './AudioTitle'
 import {
+  addTracks,
   clearQueue,
   currentPlaying,
   refreshQueue,
@@ -29,6 +30,8 @@ import {
 import PlayerToolbar from './PlayerToolbar'
 import { sendNotification } from '../utils'
 import subsonic from '../subsonic'
+import { httpClient } from '../dataProvider'
+import { REST_URL } from '../consts'
 import locale from './locale'
 import { keyMap } from '../hotkeys'
 import keyHandlers from './keyHandlers'
@@ -46,6 +49,7 @@ const Player = () => {
   const [heartbeatTrackId, setHeartbeatTrackId] = useState(null)
   const lastPositionMsRef = useRef(0)
   const currentTrackIdRef = useRef(null)
+  const autofillRequestRef = useRef(null)
   const stoppedRef = useRef(false)
   const [audioInstance, setAudioInstance] = useState(null)
   const isDesktop = useMediaQuery('(min-width:810px)')
@@ -60,8 +64,13 @@ const Player = () => {
   // without re-triggering on every queue/position change
   const playerStateRef = useRef(playerState)
   playerStateRef.current = playerState
+  const currentQueueUuid = playerState.current?.uuid
 
   currentTrackIdRef.current = currentTrackId
+
+  useEffect(() => {
+    autofillRequestRef.current = null
+  }, [currentQueueUuid])
 
   useInterval(
     () => {
@@ -318,9 +327,46 @@ const Player = () => {
             info.cover,
           )
         }
+        if (playerState.autofillEnabled && !info.isRadio) {
+          const currentIdx = playerState.queue.findIndex(
+            (item) => item.uuid === info.uuid,
+          )
+          if (
+            currentIdx >= 0 &&
+            currentIdx === playerState.queue.length - 1 &&
+            autofillRequestRef.current !== info.uuid
+          ) {
+            autofillRequestRef.current = info.uuid
+            httpClient(`${REST_URL}/queue/autofill?count=1`, {
+              method: 'POST',
+            })
+              .then(({ json }) => {
+                const tracks = json || []
+                if (tracks.length === 0) {
+                  return
+                }
+                const data = tracks.reduce((acc, track) => {
+                  acc[track.id] = track
+                  return acc
+                }, {})
+                dispatch(addTracks(data, tracks.map((track) => track.id)))
+              })
+              .catch((e) => {
+                // eslint-disable-next-line no-console
+                console.log('Autofill queue error:', e)
+              })
+          }
+        }
       }
     },
-    [context, dispatch, showNotifications, currentTrackId],
+    [
+      context,
+      dispatch,
+      playerState.autofillEnabled,
+      playerState.queue,
+      showNotifications,
+      currentTrackId,
+    ],
   )
 
   const onAudioPlayTrackChange = useCallback(() => {
