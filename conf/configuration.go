@@ -153,19 +153,20 @@ type configOptions struct {
 }
 
 type scannerOptions struct {
-	Enabled            bool
-	Schedule           string
-	BPMSchedule        string
-	WatcherWait        time.Duration
-	ScanOnStartup      bool
-	Extractor          string
-	AnalyzeBPM         bool
-	ArtistJoiner       string
-	GenreSeparators    string // Deprecated: Use Tags.genre.Split instead
-	GroupAlbumReleases bool   // Deprecated: Use PID.Album instead
-	FollowSymlinks     bool   // Whether to follow symlinks when scanning directories
-	IgnoreDotFolders   bool   // Whether to ignore folders whose name starts with a dot when scanning
-	PurgeMissing       string // Values: "never", "always", "full"
+	Enabled                    bool
+	Schedule                   string
+	BPMSchedule                string
+	GeneratedPlaylistsSchedule string
+	WatcherWait                time.Duration
+	ScanOnStartup              bool
+	Extractor                  string
+	AnalyzeBPM                 bool
+	ArtistJoiner               string
+	GenreSeparators            string // Deprecated: Use Tags.genre.Split instead
+	GroupAlbumReleases         bool   // Deprecated: Use PID.Album instead
+	FollowSymlinks             bool   // Whether to follow symlinks when scanning directories
+	IgnoreDotFolders           bool   // Whether to ignore folders whose name starts with a dot when scanning
+	PurgeMissing               string // Values: "never", "always", "full"
 }
 
 type transcodingOptions struct {
@@ -818,6 +819,7 @@ func setViperDefaults() {
 	viper.SetDefault("scanner.enabled", true)
 	viper.SetDefault("scanner.schedule", "0")
 	viper.SetDefault("scanner.bmpschedule", "")
+	viper.SetDefault("scanner.generatedplaylistsschedule", "")
 	viper.SetDefault("scanner.extractor", consts.DefaultScannerExtractor)
 	viper.SetDefault("scanner.analyzebpm", false)
 	viper.SetDefault("scanner.watcherwait", consts.DefaultWatcherWait)

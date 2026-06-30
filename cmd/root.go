@@ -11,6 +11,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/consts"
+	"github.com/navidrome/navidrome/core"
+	"github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/db"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
@@ -88,6 +90,7 @@ func runNavidrome(ctx context.Context) {
 	g.Go(schedulePeriodicBackup(ctx))
 	g.Go(startInsightsCollector(ctx))
 	g.Go(scheduleDBOptimizer(ctx))
+	g.Go(schedulePeriodicGeneratedPlaylists(ctx))
 	g.Go(startPluginManager(ctx))
 	g.Go(runInitialScan(ctx))
 	if conf.Server.Scanner.Enabled {
@@ -190,6 +193,39 @@ func schedulePeriodicBPMScan(ctx context.Context) func() error {
 		})
 		if err != nil {
 			log.Error(ctx, "Error scheduling periodic BPM backfill", err)
+		}
+		return nil
+	}
+}
+
+// schedulePeriodicGeneratedPlaylists schedules refreshes for generated playlists, if configured.
+func schedulePeriodicGeneratedPlaylists(ctx context.Context) func() error {
+	return func() error {
+		schedule := conf.Server.Scanner.GeneratedPlaylistsSchedule
+		if schedule == "" {
+			log.Info(ctx, "Periodic generated playlist refresh is DISABLED")
+			return nil
+		}
+
+		ds := CreateDataStore()
+		pls := playlists.NewPlaylists(ds, core.NewImageUploadService())
+		schedulerInstance := scheduler.GetInstance()
+
+		log.Info("Scheduling periodic generated playlist refresh", "schedule", schedule)
+		_, err := schedulerInstance.Add(schedule, func() {
+			if scanner.IsScanning() {
+				log.Debug(ctx, "Skipping generated playlist refresh because a scan is in progress")
+				return
+			}
+			if err := pls.SyncGeneratedBPMPlaylists(ctx); err != nil {
+				log.Error(ctx, "Error syncing generated BPM playlists", err)
+			}
+			if err := pls.SyncGeneratedDiscoveryPlaylist(ctx); err != nil {
+				log.Error(ctx, "Error syncing generated discovery playlist", err)
+			}
+		})
+		if err != nil {
+			log.Error(ctx, "Error scheduling periodic generated playlist refresh", err)
 		}
 		return nil
 	}
