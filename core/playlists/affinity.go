@@ -1,16 +1,44 @@
 package playlists
 
 import (
+	"context"
 	"slices"
 	"strings"
+	"sync"
 
+	"github.com/navidrome/navidrome/core/agents"
 	"github.com/navidrome/navidrome/model"
 )
 
+type ArtistSimilarityProvider interface {
+	GetSimilarArtists(ctx context.Context, id, name, mbid string, limit int) ([]agents.Artist, error)
+}
+
 type TrackAffinity struct{}
+
+type similarArtistSet struct {
+	byName map[string]struct{}
+	byMBID map[string]struct{}
+}
+
+var (
+	artistSimilarityProvider ArtistSimilarityProvider
+	artistSimilarityMu       sync.RWMutex
+	artistSimilarityCache    = map[string]similarArtistSet{}
+	artistSimilarityCacheMu  sync.Mutex
+)
 
 func NewTrackAffinity() *TrackAffinity {
 	return &TrackAffinity{}
+}
+
+func SetArtistSimilarityProvider(provider ArtistSimilarityProvider) {
+	artistSimilarityMu.Lock()
+	defer artistSimilarityMu.Unlock()
+	artistSimilarityProvider = provider
+	artistSimilarityCacheMu.Lock()
+	artistSimilarityCache = map[string]similarArtistSet{}
+	artistSimilarityCacheMu.Unlock()
 }
 
 func (a *TrackAffinity) Score(candidate model.MediaFile, seeds, recent model.MediaFiles) float64 {
@@ -91,4 +119,10 @@ func (a *TrackAffinity) Recommend(pool, context model.MediaFiles, count int) mod
 		seen[item.track.ID] = struct{}{}
 	}
 	return out
+}
+
+func getArtistSimilarityProvider() ArtistSimilarityProvider {
+	artistSimilarityMu.RLock()
+	defer artistSimilarityMu.RUnlock()
+	return artistSimilarityProvider
 }

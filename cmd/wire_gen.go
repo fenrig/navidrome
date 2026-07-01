@@ -20,7 +20,6 @@ import (
 	"github.com/navidrome/navidrome/core/matcher"
 	"github.com/navidrome/navidrome/core/metrics"
 	"github.com/navidrome/navidrome/core/playback"
-	"github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/core/scrobbler"
 	"github.com/navidrome/navidrome/core/sonic"
 	"github.com/navidrome/navidrome/core/stream"
@@ -65,7 +64,6 @@ func CreateNativeAPIRouter(ctx context.Context) *nativeapi.Router {
 	dataStore := persistence.New(sqlDB)
 	share := core.NewShare(dataStore)
 	imageUploadService := core.NewImageUploadService()
-	playlistsPlaylists := playlists.NewPlaylists(dataStore, imageUploadService)
 	insights := metrics.GetInstance(dataStore)
 	fileCache := artwork.GetImageCache()
 	fFmpeg := ffmpeg.New()
@@ -73,6 +71,7 @@ func CreateNativeAPIRouter(ctx context.Context) *nativeapi.Router {
 	metricsMetrics := metrics.GetPrometheusInstance(dataStore)
 	manager := plugins.GetManager(dataStore, broker, metricsMetrics)
 	agentsAgents := agents.GetAgents(dataStore, manager)
+	playlistsPlaylists := core.NewPlaylists(dataStore, imageUploadService, agentsAgents)
 	matcherMatcher := matcher.New(dataStore)
 	provider := external.NewProvider(dataStore, agentsAgents, matcherMatcher)
 	artworkArtwork := artwork.NewArtwork(dataStore, fileCache, fFmpeg, provider)
@@ -105,7 +104,7 @@ func CreateSubsonicAPIRouter(ctx context.Context) *subsonic.Router {
 	players := core.NewPlayers(dataStore)
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
 	imageUploadService := core.NewImageUploadService()
-	playlistsPlaylists := playlists.NewPlaylists(dataStore, imageUploadService)
+	playlistsPlaylists := core.NewPlaylists(dataStore, imageUploadService, agentsAgents)
 	modelScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
 	playTracker := scrobbler.GetPlayTracker(dataStore, broker, manager)
 	playbackServer := playback.GetInstance(dataStore)
@@ -178,7 +177,7 @@ func CreateScanner(ctx context.Context) model.Scanner {
 	artworkArtwork := artwork.NewArtwork(dataStore, fileCache, fFmpeg, provider)
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
 	imageUploadService := core.NewImageUploadService()
-	playlistsPlaylists := playlists.NewPlaylists(dataStore, imageUploadService)
+	playlistsPlaylists := core.NewPlaylists(dataStore, imageUploadService, agentsAgents)
 	modelScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
 	return modelScanner
 }
@@ -197,7 +196,7 @@ func CreateScanWatcher(ctx context.Context) scanner.Watcher {
 	artworkArtwork := artwork.NewArtwork(dataStore, fileCache, fFmpeg, provider)
 	cacheWarmer := artwork.NewCacheWarmer(artworkArtwork, fileCache)
 	imageUploadService := core.NewImageUploadService()
-	playlistsPlaylists := playlists.NewPlaylists(dataStore, imageUploadService)
+	playlistsPlaylists := core.NewPlaylists(dataStore, imageUploadService, agentsAgents)
 	modelScanner := scanner.New(ctx, dataStore, cacheWarmer, broker, playlistsPlaylists, metricsMetrics)
 	watcher := scanner.GetWatcher(dataStore, modelScanner)
 	return watcher

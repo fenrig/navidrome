@@ -422,6 +422,9 @@ func seedSimilarityScore(candidate, seed model.MediaFile) float64 {
 	if technical := technicalSimilarityScore(candidate, seed); technical > 0 {
 		score += technical
 	}
+	if external := artistSimilarityBoost(candidate, seed); external > 0 {
+		score += external
+	}
 	return score
 }
 
@@ -576,6 +579,90 @@ func technicalSimilarityScore(a, b model.MediaFile) float64 {
 		score += 0.5
 	}
 	return score
+}
+
+func artistSimilarityBoost(candidate, seed model.MediaFile) float64 {
+	provider := getArtistSimilarityProvider()
+	if provider == nil {
+		return 0
+	}
+
+	candidateKey := normalizeKey(primaryArtistKey(candidate))
+	candidateMBID := normalizeKey(candidate.MbzArtistID)
+	if candidateKey == "" && candidateMBID == "" {
+		return 0
+	}
+
+	seedKey := similaritySeedKey(seed)
+	if seedKey == "" {
+		return 0
+	}
+
+	set := getSimilarArtistsForSeed(seed, provider)
+	if len(set.byName) == 0 && len(set.byMBID) == 0 {
+		return 0
+	}
+	if candidateMBID != "" {
+		if _, ok := set.byMBID[candidateMBID]; ok {
+			return 18
+		}
+	}
+	if candidateKey != "" {
+		if _, ok := set.byName[candidateKey]; ok {
+			return 12
+		}
+	}
+	return 0
+}
+
+func similaritySeedKey(seed model.MediaFile) string {
+	if key := normalizeKey(seed.MbzArtistID); key != "" {
+		return "mbid:" + key
+	}
+	if key := normalizeKey(primaryArtistKey(seed)); key != "" {
+		return "id:" + key
+	}
+	if key := normalizeKey(seed.Artist); key != "" {
+		return "name:" + key
+	}
+	return ""
+}
+
+func getSimilarArtistsForSeed(seed model.MediaFile, provider ArtistSimilarityProvider) similarArtistSet {
+	key := similaritySeedKey(seed)
+	if key == "" {
+		return similarArtistSet{}
+	}
+
+	artistSimilarityCacheMu.Lock()
+	if cached, ok := artistSimilarityCache[key]; ok {
+		artistSimilarityCacheMu.Unlock()
+		return cached
+	}
+	artistSimilarityCacheMu.Unlock()
+
+	result := similarArtistSet{
+		byName: map[string]struct{}{},
+		byMBID: map[string]struct{}{},
+	}
+
+	ctx := context.Background()
+	similar, err := provider.GetSimilarArtists(ctx, seed.ArtistID, seed.Artist, seed.MbzArtistID, 25)
+	if err == nil {
+		for _, artist := range similar {
+			if name := normalizeKey(artist.Name); name != "" {
+				result.byName[name] = struct{}{}
+			}
+			if mbid := normalizeKey(artist.MBID); mbid != "" {
+				result.byMBID[mbid] = struct{}{}
+			}
+		}
+	}
+
+	artistSimilarityCacheMu.Lock()
+	artistSimilarityCache[key] = result
+	artistSimilarityCacheMu.Unlock()
+	return result
 }
 
 func bestYear(mf model.MediaFile) int {

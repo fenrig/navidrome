@@ -5,6 +5,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/navidrome/navidrome/core/agents"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/tests"
@@ -126,6 +127,37 @@ func TestTechnicalSimilarityScorePrefersMatchingAudioProperties(t *testing.T) {
 	}
 }
 
+func TestArtistSimilarityBoostPrefersLastFmMatches(t *testing.T) {
+	defer SetArtistSimilarityProvider(nil)
+	SetArtistSimilarityProvider(fakeSimilarityProvider{
+		artists: map[string][]agents.Artist{
+			"seed-mbid": {
+				{Name: "Modus", MBID: "modus-mbid"},
+			},
+		},
+	})
+
+	seed := model.MediaFile{
+		ArtistID:    "seed-artist",
+		Artist:      "Dekel",
+		MbzArtistID: "seed-mbid",
+	}
+	match := model.MediaFile{
+		ArtistID:    "match-artist",
+		Artist:      "Modus",
+		MbzArtistID: "modus-mbid",
+	}
+	miss := model.MediaFile{
+		ArtistID:    "miss-artist",
+		Artist:      "Other",
+		MbzArtistID: "other-mbid",
+	}
+
+	if got, want := artistSimilarityBoost(match, seed), artistSimilarityBoost(miss, seed); got <= want {
+		t.Fatalf("expected matching artist to score higher than miss, got match=%v miss=%v", got, want)
+	}
+}
+
 func TestSyncGeneratedDiscoveryPlaylist(t *testing.T) {
 	ctx := context.Background()
 	userRepo := tests.CreateMockUserRepo()
@@ -238,6 +270,20 @@ func countArtist(tracks model.MediaFiles, artist string) int {
 		}
 	}
 	return count
+}
+
+type fakeSimilarityProvider struct {
+	artists map[string][]agents.Artist
+}
+
+func (f fakeSimilarityProvider) GetSimilarArtists(_ context.Context, _, name, mbid string, _ int) ([]agents.Artist, error) {
+	if artists, ok := f.artists[mbid]; ok {
+		return artists, nil
+	}
+	if artists, ok := f.artists[name]; ok {
+		return artists, nil
+	}
+	return nil, nil
 }
 
 type noopImageUploadService struct{}
