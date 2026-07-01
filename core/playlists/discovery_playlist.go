@@ -419,6 +419,9 @@ func seedSimilarityScore(candidate, seed model.MediaFile) float64 {
 	if year := yearCloseness(candidate, seed); year > 0 {
 		score += year
 	}
+	if technical := technicalSimilarityScore(candidate, seed); technical > 0 {
+		score += technical
+	}
 	return score
 }
 
@@ -524,6 +527,55 @@ func yearCloseness(a, b model.MediaFile) float64 {
 	default:
 		return 0
 	}
+}
+
+func technicalSimilarityScore(a, b model.MediaFile) float64 {
+	score := 0.0
+
+	switch diff := math.Abs(float64(a.Duration - b.Duration)); {
+	case diff == 0:
+		score += 6
+	case diff <= 15:
+		score += 5
+	case diff <= 30:
+		score += 4
+	case diff <= 60:
+		score += 2
+	}
+
+	switch diff := math.Abs(float64(a.BitRate - b.BitRate)); {
+	case a.BitRate > 0 && b.BitRate > 0 && diff == 0:
+		score += 3
+	case a.BitRate > 0 && b.BitRate > 0 && diff <= 64:
+		score += 2
+	case a.BitRate > 0 && b.BitRate > 0 && diff <= 128:
+		score += 1
+	}
+
+	if a.SampleRate > 0 && b.SampleRate > 0 && a.SampleRate == b.SampleRate {
+		score += 2
+	}
+	if a.Channels > 0 && b.Channels > 0 && a.Channels == b.Channels {
+		score += 1
+	}
+	if a.BitDepth != nil && b.BitDepth != nil && *a.BitDepth == *b.BitDepth {
+		score += 1
+	}
+	if a.Codec != "" && b.Codec != "" && strings.EqualFold(a.Codec, b.Codec) {
+		score += 1
+	}
+	if a.TrackNumber > 0 && b.TrackNumber > 0 {
+		switch diff := math.Abs(float64(a.TrackNumber - b.TrackNumber)); {
+		case diff == 0:
+			score += 1
+		case diff <= 2:
+			score += 0.5
+		}
+	}
+	if a.DiscNumber > 0 && b.DiscNumber > 0 && a.DiscNumber == b.DiscNumber {
+		score += 0.5
+	}
+	return score
 }
 
 func bestYear(mf model.MediaFile) int {
