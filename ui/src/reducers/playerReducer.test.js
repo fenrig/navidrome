@@ -235,8 +235,31 @@ describe('playerReducer', () => {
         volume: 1,
         autofillEnabled: false,
       }
-      const result = playerReducer(state, { type: PLAYER_TOGGLE_QUEUE_AUTOFILL })
+      const result = playerReducer(state, {
+        type: PLAYER_TOGGLE_QUEUE_AUTOFILL,
+      })
       expect(result.autofillEnabled).toBe(true)
+    })
+  })
+
+  describe('seen track ids', () => {
+    it('collects unique track ids when tracks are added', () => {
+      const state = {
+        queue: [],
+        current: {},
+        clear: false,
+        volume: 1,
+        seenTrackIds: ['song-1'],
+      }
+      const action = {
+        type: 'PLAYER_ADD_TRACKS',
+        data: {
+          'song-1': { id: 'song-1' },
+          'song-2': { id: 'song-2' },
+        },
+      }
+      const result = playerReducer(state, action)
+      expect(result.seenTrackIds).toEqual(['song-1', 'song-2'])
     })
   })
 })

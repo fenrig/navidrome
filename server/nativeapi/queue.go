@@ -1,9 +1,11 @@
 package nativeapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,6 +27,11 @@ type updateQueuePayload struct {
 
 type saveQueueAsPlaylistPayload struct {
 	Name string `json:"name,omitempty"`
+}
+
+type autofillQueuePayload struct {
+	Count      int      `json:"count,omitempty"`
+	ExcludeIDs []string `json:"excludeIds,omitempty"`
 }
 
 // validateCurrentIndex validates that the current index is within bounds of the items array.
@@ -227,7 +234,16 @@ func autofillQueue(ds model.DataStore) http.HandlerFunc {
 		user, _ := request.UserFrom(ctx)
 
 		count := 1
-		if raw := r.URL.Query().Get("count"); raw != "" {
+		payload := autofillQueuePayload{}
+		if body, err := io.ReadAll(r.Body); err == nil && len(bytes.TrimSpace(body)) > 0 {
+			if err := json.Unmarshal(body, &payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		if payload.Count > 0 {
+			count = payload.Count
+		} else if raw := r.URL.Query().Get("count"); raw != "" {
 			n, err := strconv.Atoi(raw)
 			if err != nil || n < 1 {
 				http.Error(w, "count must be a positive integer", http.StatusBadRequest)
@@ -260,6 +276,9 @@ func autofillQueue(ds model.DataStore) http.HandlerFunc {
 		existing := map[string]struct{}{}
 		for _, item := range queue.Items {
 			existing[item.ID] = struct{}{}
+		}
+		for _, id := range payload.ExcludeIDs {
+			existing[id] = struct{}{}
 		}
 		candidates := make(model.MediaFiles, 0, len(pool))
 		for _, item := range pool {

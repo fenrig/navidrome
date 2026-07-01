@@ -23,6 +23,7 @@ const initialState = {
   volume: config.defaultUIVolume / 100,
   savedPlayIndex: 0,
   autofillEnabled: false,
+  seenTrackIds: [],
 }
 
 const pad = (value) => {
@@ -100,6 +101,19 @@ const mapToAudioLists = (item) => {
   }
 }
 
+const trackIdsFromData = (data) =>
+  Object.entries(data).map(([key, track]) => track?.id || key.replace(/^_/, ''))
+
+const appendUniqueTrackIds = (seenTrackIds = [], ids) => {
+  const next = [...(seenTrackIds || [])]
+  ids.forEach((id) => {
+    if (id && !next.includes(id)) {
+      next.push(id)
+    }
+  })
+  return next
+}
+
 const reduceClearQueue = () => ({ ...initialState, clear: true })
 
 const reducePlayTracks = (state, { data, id }) => {
@@ -115,6 +129,7 @@ const reducePlayTracks = (state, { data, id }) => {
     queue,
     playIndex,
     clear: true,
+    seenTrackIds: trackIdsFromData(data),
   }
 }
 
@@ -124,6 +139,7 @@ const reduceSetTrack = (state, { data }) => {
     queue: [mapToAudioLists(data)],
     playIndex: 0,
     clear: true,
+    seenTrackIds: [data.id],
   }
 }
 
@@ -132,7 +148,15 @@ const reduceAddTracks = (state, { data }) => {
   Object.keys(data).forEach((id) => {
     queue.push(mapToAudioLists(data[id]))
   })
-  return { ...state, queue, clear: false }
+  return {
+    ...state,
+    queue,
+    clear: false,
+    seenTrackIds: appendUniqueTrackIds(
+      state.seenTrackIds,
+      trackIdsFromData(data),
+    ),
+  }
 }
 
 const reducePlayNext = (state, { data }) => {
@@ -155,6 +179,10 @@ const reducePlayNext = (state, { data }) => {
     ...state,
     queue: newQueue,
     clear: true,
+    seenTrackIds: appendUniqueTrackIds(
+      state.seenTrackIds,
+      trackIdsFromData(data),
+    ),
   }
 }
 

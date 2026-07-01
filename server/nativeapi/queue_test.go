@@ -364,6 +364,73 @@ var _ = Describe("Queue Endpoints", func() {
 			Expect(repo.LastCols).To(ConsistOf("items"))
 			Expect(w.Body.String()).To(ContainSubstring(`"recommended"`))
 		})
+
+		It("skips tracks listed in excludeIds", func() {
+			repo.Queue = &model.PlayQueue{
+				UserID: user.ID,
+				Items: model.MediaFiles{
+					{
+						ID:          "seed",
+						Title:       "Seed",
+						Artist:      "Artist A",
+						ArtistID:    "Artist A",
+						Album:       "Album A",
+						AlbumID:     "Album A",
+						AlbumArtist: "Artist A",
+						Genres:      model.Genres{{Name: "Genre X"}},
+						Tags:        model.Tags{model.TagGenre: []string{"Genre X"}},
+						BPM:         intPtrLocal(140),
+						Annotations: model.Annotations{
+							PlayCount: 20,
+							Starred:   true,
+						},
+					},
+				},
+			}
+			mfRepo.SetData(model.MediaFiles{
+				{
+					ID:          "seed",
+					Title:       "Seed",
+					Artist:      "Artist A",
+					ArtistID:    "Artist A",
+					Album:       "Album A",
+					AlbumID:     "Album A",
+					AlbumArtist: "Artist A",
+					Genres:      model.Genres{{Name: "Genre X"}},
+					Tags:        model.Tags{model.TagGenre: []string{"Genre X"}},
+					BPM:         intPtrLocal(140),
+					Annotations: model.Annotations{
+						PlayCount: 20,
+						Starred:   true,
+					},
+				},
+				{
+					ID:          "recommended",
+					Title:       "Recommended",
+					Artist:      "Artist A",
+					ArtistID:    "Artist A",
+					Album:       "Album B",
+					AlbumID:     "Album B",
+					AlbumArtist: "Artist A",
+					Genres:      model.Genres{{Name: "Genre X"}},
+					Tags:        model.Tags{model.TagGenre: []string{"Genre X"}},
+					BPM:         intPtrLocal(141),
+				},
+			})
+
+			body, _ := json.Marshal(autofillQueuePayload{
+				Count:      1,
+				ExcludeIDs: []string{"recommended"},
+			})
+			req := httptest.NewRequest("POST", "/queue/autofill", bytes.NewReader(body))
+			req = req.WithContext(request.WithUser(req.Context(), user))
+			w := httptest.NewRecorder()
+
+			autofillQueue(ds)(w, req)
+			Expect(w.Code).To(Equal(http.StatusNoContent))
+			Expect(repo.Queue).ToNot(BeNil())
+			Expect(repo.Queue.Items).To(HaveLen(1))
+		})
 	})
 
 	Describe("POST /queue/save", func() {

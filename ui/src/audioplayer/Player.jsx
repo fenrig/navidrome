@@ -339,6 +339,10 @@ const Player = () => {
             autofillRequestRef.current = info.uuid
             httpClient(`${REST_URL}/queue/autofill?count=1`, {
               method: 'POST',
+              body: JSON.stringify({
+                count: 1,
+                excludeIds: playerState.seenTrackIds || [],
+              }),
             })
               .then(({ json }) => {
                 const tracks = json || []
@@ -349,7 +353,12 @@ const Player = () => {
                   acc[track.id] = track
                   return acc
                 }, {})
-                dispatch(addTracks(data, tracks.map((track) => track.id)))
+                dispatch(
+                  addTracks(
+                    data,
+                    tracks.map((track) => track.id),
+                  ),
+                )
               })
               .catch((e) => {
                 // eslint-disable-next-line no-console
@@ -364,6 +373,7 @@ const Player = () => {
       dispatch,
       playerState.autofillEnabled,
       playerState.queue,
+      playerState.seenTrackIds,
       showNotifications,
       currentTrackId,
     ],

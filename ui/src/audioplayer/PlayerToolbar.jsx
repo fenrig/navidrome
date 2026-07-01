@@ -66,6 +66,7 @@ const PlayerToolbar = ({ id, isRadio }) => {
   const autofillEnabled = useSelector(
     (state) => state.player?.autofillEnabled ?? false,
   )
+  const seenTrackIds = useSelector((state) => state.player?.seenTrackIds ?? [])
   const translate = useTranslate()
   const notify = useNotify()
   const { data, loading } = useGetOne('song', id, { enabled: !!id && !isRadio })
@@ -99,16 +100,28 @@ const PlayerToolbar = ({ id, isRadio }) => {
       e.stopPropagation()
       setAutofilling(true)
       try {
-        const response = await httpClient(`${REST_URL}/queue/autofill?count=1`, {
-          method: 'POST',
-        })
+        const response = await httpClient(
+          `${REST_URL}/queue/autofill?count=1`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              count: 1,
+              excludeIds: seenTrackIds,
+            }),
+          },
+        )
         const tracks = response.json || []
         if (tracks.length > 0) {
           const data = tracks.reduce((acc, track) => {
             acc[track.id] = track
             return acc
           }, {})
-          dispatch(addTracks(data, tracks.map((track) => track.id)))
+          dispatch(
+            addTracks(
+              data,
+              tracks.map((track) => track.id),
+            ),
+          )
         }
       } catch {
         notify('ra.page.error', { type: 'warning' })
@@ -116,7 +129,7 @@ const PlayerToolbar = ({ id, isRadio }) => {
         setAutofilling(false)
       }
     },
-    [dispatch, notify],
+    [dispatch, notify, seenTrackIds],
   )
 
   const buttonClass = isDesktop ? classes.button : classes.mobileButton
@@ -148,7 +161,9 @@ const PlayerToolbar = ({ id, isRadio }) => {
           data-testid="autofill-queue-button"
           className={buttonClass}
         >
-          <QueueMusicIcon className={!isDesktop ? classes.mobileIcon : undefined} />
+          <QueueMusicIcon
+            className={!isDesktop ? classes.mobileIcon : undefined}
+          />
         </IconButton>
       </span>
     </Tooltip>

@@ -1,5 +1,11 @@
 import React from 'react'
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+} from '@testing-library/react'
 import { useMediaQuery } from '@material-ui/core'
 import { useGetOne } from 'react-admin'
 import { useDispatch, useSelector } from 'react-redux'
@@ -62,7 +68,9 @@ describe('<PlayerToolbar />', () => {
     useToggleLove.mockReturnValue([mockToggleLove, false])
     useDispatch.mockReturnValue(mockDispatch)
     useSelector.mockImplementation((selector) =>
-      selector({ player: { autofillEnabled: false } }),
+      selector({
+        player: { autofillEnabled: false, seenTrackIds: ['seed-1'] },
+      }),
     )
     openSaveQueueDialog.mockReturnValue({ type: 'OPEN_SAVE_QUEUE_DIALOG' })
     toggleQueueAutofill.mockReturnValue({
@@ -142,7 +150,13 @@ describe('<PlayerToolbar />', () => {
       await waitFor(() => {
         expect(httpClient).toHaveBeenCalledWith(
           '/api/queue/autofill?count=1',
-          expect.objectContaining({ method: 'POST' }),
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({
+              count: 1,
+              excludeIds: ['seed-1'],
+            }),
+          }),
         )
       })
 
