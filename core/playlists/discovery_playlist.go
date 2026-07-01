@@ -344,18 +344,15 @@ func discoveryCandidateScore(candidate model.MediaFile, seeds, recent model.Medi
 		last := recent[len(recent)-1]
 		if sameArtist(candidate, last) {
 			score -= 45
+			if streak := consecutiveSameArtistCount(candidate, recent); streak > 1 {
+				score -= float64((streak - 1) * 80)
+			}
 		}
 		if sameAlbum(candidate, last) {
 			score -= 60
 		}
 		if sameLabel(candidate, last) {
 			score -= 8
-		}
-	}
-	if len(recent) > 1 {
-		prev := recent[len(recent)-2]
-		if sameArtist(candidate, prev) {
-			score -= 15
 		}
 	}
 	return score
@@ -394,6 +391,26 @@ func discoveryContextScore(candidate model.MediaFile, context model.MediaFiles, 
 
 func sameAlbum(a, b model.MediaFile) bool {
 	return normalizeKey(a.AlbumID) != "" && normalizeKey(a.AlbumID) == normalizeKey(b.AlbumID)
+}
+
+func consecutiveSameArtistCount(candidate model.MediaFile, recent model.MediaFiles) int {
+	if len(recent) == 0 {
+		return 0
+	}
+
+	key := normalizeKey(primaryArtistKey(candidate))
+	if key == "" {
+		return 0
+	}
+
+	count := 0
+	for i := len(recent) - 1; i >= 0; i-- {
+		if key != normalizeKey(primaryArtistKey(recent[i])) {
+			break
+		}
+		count++
+	}
+	return count
 }
 
 func seedSimilarityScore(candidate, seed model.MediaFile) float64 {

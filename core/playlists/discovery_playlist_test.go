@@ -158,6 +158,28 @@ func TestArtistSimilarityBoostPrefersLastFmMatches(t *testing.T) {
 	}
 }
 
+func TestDiscoveryCandidateScorePenalizesConsecutiveSameArtist(t *testing.T) {
+	candidate := model.MediaFile{
+		ArtistID: "artist-a",
+		Artist:   "Artist A",
+	}
+	last := model.MediaFile{
+		ArtistID: "artist-a",
+		Artist:   "Artist A",
+	}
+	prev := model.MediaFile{
+		ArtistID: "artist-a",
+		Artist:   "Artist A",
+	}
+
+	scoreOneRepeat := discoveryCandidateScore(candidate, nil, model.MediaFiles{last})
+	scoreTwoRepeats := discoveryCandidateScore(candidate, nil, model.MediaFiles{prev, last})
+
+	if scoreTwoRepeats >= scoreOneRepeat {
+		t.Fatalf("expected a longer same-artist streak to score lower, got one=%v two=%v", scoreOneRepeat, scoreTwoRepeats)
+	}
+}
+
 func TestSyncGeneratedDiscoveryPlaylist(t *testing.T) {
 	ctx := context.Background()
 	userRepo := tests.CreateMockUserRepo()
