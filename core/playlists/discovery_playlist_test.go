@@ -158,6 +158,83 @@ func TestArtistSimilarityBoostPrefersLastFmMatches(t *testing.T) {
 	}
 }
 
+func TestLastFmTrackSimilarityBoostPrefersMatchingTracks(t *testing.T) {
+	defer SetTrackSimilarityProvider(nil)
+	SetTrackSimilarityProvider(fakeSimilarityProvider{
+		tracks: map[string][]agents.Song{
+			"seed-track-mbid": {
+				{Name: "The Journey", Artist: "Modus", MBID: "journey-mbid"},
+			},
+		},
+	})
+
+	seed := model.MediaFile{
+		Title:          "The Journey",
+		Artist:         "Dekel",
+		MbzRecordingID: "seed-track-mbid",
+	}
+	match := model.MediaFile{
+		Title:          "The Journey",
+		Artist:         "Modus",
+		MbzRecordingID: "journey-mbid",
+	}
+	miss := model.MediaFile{
+		Title:          "Different Song",
+		Artist:         "Other",
+		MbzRecordingID: "different-mbid",
+	}
+
+	if got, want := trackSimilarityBoost(match, seed), trackSimilarityBoost(miss, seed); got <= want {
+		t.Fatalf("expected matching track to score higher than miss, got match=%v miss=%v", got, want)
+	}
+}
+
+func TestGenreAndLabelFamilyExpansionAddsSimilarity(t *testing.T) {
+	seed := model.MediaFile{
+		Title:    "Seed",
+		Artist:   "Artist A",
+		Album:    "Album A",
+		Genres:   model.Genres{{Name: "psytrance"}},
+		Tags:     model.Tags{model.TagRecordLabel: []string{"Parvati Records"}},
+		Year:     2020,
+		Duration: 300,
+	}
+	genreMatch := model.MediaFile{
+		Title:    "Match",
+		Artist:   "Artist B",
+		Album:    "Album B",
+		Genres:   model.Genres{{Name: "goa trance"}},
+		Tags:     model.Tags{model.TagRecordLabel: []string{"Other Label"}},
+		Year:     2020,
+		Duration: 300,
+	}
+	labelMatch := model.MediaFile{
+		Title:    "Match 2",
+		Artist:   "Artist C",
+		Album:    "Album C",
+		Genres:   model.Genres{{Name: "ambient"}},
+		Tags:     model.Tags{model.TagRecordLabel: []string{"Parvati"}},
+		Year:     2020,
+		Duration: 300,
+	}
+	miss := model.MediaFile{
+		Title:    "Miss",
+		Artist:   "Artist D",
+		Album:    "Album D",
+		Genres:   model.Genres{{Name: "drum and bass"}},
+		Tags:     model.Tags{model.TagRecordLabel: []string{"Some Other Label"}},
+		Year:     2020,
+		Duration: 300,
+	}
+
+	if got, want := seedSimilarityScore(genreMatch, seed), seedSimilarityScore(miss, seed); got <= want {
+		t.Fatalf("expected genre family match to score higher than miss, got match=%v miss=%v", got, want)
+	}
+	if got, want := seedSimilarityScore(labelMatch, seed), seedSimilarityScore(miss, seed); got <= want {
+		t.Fatalf("expected label family match to score higher than miss, got match=%v miss=%v", got, want)
+	}
+}
+
 func TestDiscoveryCandidateScorePenalizesConsecutiveSameArtist(t *testing.T) {
 	candidate := model.MediaFile{
 		ArtistID: "artist-a",
@@ -296,6 +373,7 @@ func countArtist(tracks model.MediaFiles, artist string) int {
 
 type fakeSimilarityProvider struct {
 	artists map[string][]agents.Artist
+	tracks  map[string][]agents.Song
 }
 
 func (f fakeSimilarityProvider) GetSimilarArtists(_ context.Context, _, name, mbid string, _ int) ([]agents.Artist, error) {
@@ -304,6 +382,16 @@ func (f fakeSimilarityProvider) GetSimilarArtists(_ context.Context, _, name, mb
 	}
 	if artists, ok := f.artists[name]; ok {
 		return artists, nil
+	}
+	return nil, nil
+}
+
+func (f fakeSimilarityProvider) GetSimilarSongsByTrack(_ context.Context, _, name, artist, mbid string, _ int) ([]agents.Song, error) {
+	if tracks, ok := f.tracks[mbid]; ok {
+		return tracks, nil
+	}
+	if tracks, ok := f.tracks[name+"|"+artist]; ok {
+		return tracks, nil
 	}
 	return nil, nil
 }

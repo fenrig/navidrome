@@ -14,6 +14,10 @@ type ArtistSimilarityProvider interface {
 	GetSimilarArtists(ctx context.Context, id, name, mbid string, limit int) ([]agents.Artist, error)
 }
 
+type TrackSimilarityProvider interface {
+	GetSimilarSongsByTrack(ctx context.Context, id, name, artist, mbid string, count int) ([]agents.Song, error)
+}
+
 type TrackAffinity struct{}
 
 type similarArtistSet struct {
@@ -21,11 +25,21 @@ type similarArtistSet struct {
 	byMBID map[string]struct{}
 }
 
+type similarTrackSet struct {
+	byTitleArtist map[string]struct{}
+	byTitle       map[string]struct{}
+	byMBID        map[string]struct{}
+}
+
 var (
 	artistSimilarityProvider ArtistSimilarityProvider
+	trackSimilarityProvider  TrackSimilarityProvider
 	artistSimilarityMu       sync.RWMutex
+	trackSimilarityMu        sync.RWMutex
 	artistSimilarityCache    = map[string]similarArtistSet{}
+	trackSimilarityCache     = map[string]similarTrackSet{}
 	artistSimilarityCacheMu  sync.Mutex
+	trackSimilarityCacheMu   sync.Mutex
 )
 
 func NewTrackAffinity() *TrackAffinity {
@@ -39,6 +53,15 @@ func SetArtistSimilarityProvider(provider ArtistSimilarityProvider) {
 	artistSimilarityCacheMu.Lock()
 	artistSimilarityCache = map[string]similarArtistSet{}
 	artistSimilarityCacheMu.Unlock()
+}
+
+func SetTrackSimilarityProvider(provider TrackSimilarityProvider) {
+	trackSimilarityMu.Lock()
+	defer trackSimilarityMu.Unlock()
+	trackSimilarityProvider = provider
+	trackSimilarityCacheMu.Lock()
+	trackSimilarityCache = map[string]similarTrackSet{}
+	trackSimilarityCacheMu.Unlock()
 }
 
 func (a *TrackAffinity) Score(candidate model.MediaFile, seeds, recent model.MediaFiles) float64 {
@@ -125,4 +148,10 @@ func getArtistSimilarityProvider() ArtistSimilarityProvider {
 	artistSimilarityMu.RLock()
 	defer artistSimilarityMu.RUnlock()
 	return artistSimilarityProvider
+}
+
+func getTrackSimilarityProvider() TrackSimilarityProvider {
+	trackSimilarityMu.RLock()
+	defer trackSimilarityMu.RUnlock()
+	return trackSimilarityProvider
 }

@@ -424,11 +424,14 @@ func seedSimilarityScore(candidate, seed model.MediaFile) float64 {
 	if candidate.AlbumID != "" && candidate.AlbumID == seed.AlbumID {
 		score += 15
 	}
-	if sharedGenreCount(candidate, seed) > 0 {
-		score += float64(sharedGenreCount(candidate, seed)) * 15
+	if genreScore := genreSimilarityScore(candidate, seed); genreScore > 0 {
+		score += genreScore
 	}
 	if sameLabel(candidate, seed) {
 		score += 10
+	}
+	if labelScore := labelSimilarityScore(candidate, seed); labelScore > 0 {
+		score += labelScore
 	}
 	if bpm := bpmCloseness(candidate.BPM, seed.BPM); bpm > 0 {
 		score += bpm
@@ -440,6 +443,9 @@ func seedSimilarityScore(candidate, seed model.MediaFile) float64 {
 		score += technical
 	}
 	if external := artistSimilarityBoost(candidate, seed); external > 0 {
+		score += external
+	}
+	if external := trackSimilarityBoost(candidate, seed); external > 0 {
 		score += external
 	}
 	return score
@@ -455,6 +461,16 @@ func sameAlbumArtist(a, b model.MediaFile) bool {
 
 func sameLabel(a, b model.MediaFile) bool {
 	return normalizeKey(recordLabelKey(a)) != "" && normalizeKey(recordLabelKey(a)) == normalizeKey(recordLabelKey(b))
+}
+
+func labelSimilarityScore(a, b model.MediaFile) float64 {
+	if aLabel, bLabel := normalizeLabelFamily(recordLabelKey(a)), normalizeLabelFamily(recordLabelKey(b)); aLabel != "" && bLabel != "" && aLabel == bLabel {
+		if sameLabel(a, b) {
+			return 0
+		}
+		return 6
+	}
+	return 0
 }
 
 func primaryArtistKey(mf model.MediaFile) string {
@@ -484,21 +500,23 @@ func recordLabelKey(mf model.MediaFile) string {
 	return ""
 }
 
-func sharedGenreCount(a, b model.MediaFile) int {
-	genres := make(map[string]struct{})
-	for _, g := range genreKeys(a) {
-		genres[g] = struct{}{}
+func genreSimilarityScore(a, b model.MediaFile) float64 {
+	exactA := exactGenreKeys(a)
+	exactB := exactGenreKeys(b)
+	exactCount := sharedKeyCount(exactA, exactB)
+
+	familyA := genreFamilyKeys(a)
+	familyB := genreFamilyKeys(b)
+	familyCount := sharedKeyCount(familyA, familyB)
+
+	sharedFamilies := familyCount - exactCount
+	if sharedFamilies < 0 {
+		sharedFamilies = 0
 	}
-	count := 0
-	for _, g := range genreKeys(b) {
-		if _, ok := genres[g]; ok {
-			count++
-		}
-	}
-	return count
+	return float64(exactCount)*15 + float64(sharedFamilies)*8
 }
 
-func genreKeys(mf model.MediaFile) []string {
+func exactGenreKeys(mf model.MediaFile) []string {
 	values := mf.Tags.Values(model.TagGenre)
 	if len(values) == 0 {
 		values = make([]string, 0, len(mf.Genres))
@@ -507,6 +525,110 @@ func genreKeys(mf model.MediaFile) []string {
 		}
 	}
 	return uniqueNormalized(values)
+}
+
+func genreFamilyKeys(mf model.MediaFile) []string {
+	families := make([]string, 0, len(exactGenreKeys(mf))*3)
+	for _, genre := range exactGenreKeys(mf) {
+		families = append(families, genreFamilyVariants(genre)...)
+	}
+	return uniqueNormalized(families)
+}
+
+func genreFamilyVariants(genre string) []string {
+	genre = normalizeGenreKey(genre)
+	if genre == "" {
+		return nil
+	}
+
+	var out []string
+	add := func(values ...string) {
+		out = append(out, values...)
+	}
+
+	add(genre)
+	if strings.Contains(genre, "trance") {
+		add("trance")
+	}
+	if strings.Contains(genre, "psy") && strings.Contains(genre, "trance") {
+		add("psytrance")
+	}
+	if strings.Contains(genre, "goa") && strings.Contains(genre, "trance") {
+		add("goa trance")
+	}
+	if strings.Contains(genre, "downtempo") || strings.Contains(genre, "chill") {
+		add("downtempo")
+	}
+	if strings.Contains(genre, "ambient") {
+		add("ambient")
+	}
+	if strings.Contains(genre, "techno") {
+		add("techno")
+	}
+	if strings.Contains(genre, "house") {
+		add("house")
+	}
+	if strings.Contains(genre, "break") {
+		add("breaks")
+	}
+	if strings.Contains(genre, "drum") && strings.Contains(genre, "bass") {
+		add("drum and bass")
+	}
+	return out
+}
+
+func normalizeGenreKey(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	v = strings.NewReplacer("-", " ", "_", " ", "/", " ", "&", " and ").Replace(v)
+	v = strings.Join(strings.Fields(v), " ")
+	return v
+}
+
+func sharedKeyCount(a, b []string) int {
+	keys := make(map[string]struct{}, len(a))
+	for _, key := range a {
+		keys[key] = struct{}{}
+	}
+	count := 0
+	for _, key := range b {
+		if _, ok := keys[key]; ok {
+			count++
+		}
+	}
+	return count
+}
+
+func normalizeLabelFamily(v string) string {
+	v = normalizeGenreKey(v)
+	if v == "" {
+		return ""
+	}
+
+	for {
+		trimmed := strings.TrimSpace(v)
+		switch {
+		case strings.HasSuffix(trimmed, " records"):
+			v = strings.TrimSpace(strings.TrimSuffix(trimmed, " records"))
+		case strings.HasSuffix(trimmed, " record"):
+			v = strings.TrimSpace(strings.TrimSuffix(trimmed, " record"))
+		case strings.HasSuffix(trimmed, " recordings"):
+			v = strings.TrimSpace(strings.TrimSuffix(trimmed, " recordings"))
+		case strings.HasSuffix(trimmed, " music"):
+			v = strings.TrimSpace(strings.TrimSuffix(trimmed, " music"))
+		case strings.HasSuffix(trimmed, " label"):
+			v = strings.TrimSpace(strings.TrimSuffix(trimmed, " label"))
+		case strings.HasSuffix(trimmed, " productions"):
+			v = strings.TrimSpace(strings.TrimSuffix(trimmed, " productions"))
+		case strings.HasSuffix(trimmed, " production"):
+			v = strings.TrimSpace(strings.TrimSuffix(trimmed, " production"))
+		case strings.HasSuffix(trimmed, " entertainment"):
+			v = strings.TrimSpace(strings.TrimSuffix(trimmed, " entertainment"))
+		case strings.HasSuffix(trimmed, " studios"):
+			v = strings.TrimSpace(strings.TrimSuffix(trimmed, " studios"))
+		default:
+			return trimmed
+		}
+	}
 }
 
 func bpmCloseness(a, b *int) float64 {
@@ -630,6 +752,107 @@ func artistSimilarityBoost(candidate, seed model.MediaFile) float64 {
 		}
 	}
 	return 0
+}
+
+func trackSimilarityBoost(candidate, seed model.MediaFile) float64 {
+	provider := getTrackSimilarityProvider()
+	if provider == nil {
+		return 0
+	}
+
+	candidateKey := normalizeKey(candidate.Title)
+	candidateArtist := normalizeKey(primaryArtistName(candidate))
+	candidateMBID := normalizeKey(candidate.MbzRecordingID)
+	if candidateMBID == "" && candidateKey == "" {
+		return 0
+	}
+
+	seedKey := similarityTrackSeedKey(seed)
+	if seedKey == "" {
+		return 0
+	}
+
+	set := getSimilarTracksForSeed(seed, provider)
+	if len(set.byTitleArtist) == 0 && len(set.byTitle) == 0 && len(set.byMBID) == 0 {
+		return 0
+	}
+	if candidateMBID != "" {
+		if _, ok := set.byMBID[candidateMBID]; ok {
+			return 20
+		}
+	}
+	if candidateKey != "" && candidateArtist != "" {
+		if _, ok := set.byTitleArtist[candidateKey+"|"+candidateArtist]; ok {
+			return 14
+		}
+	}
+	if candidateKey != "" {
+		if _, ok := set.byTitle[candidateKey]; ok {
+			return 8
+		}
+	}
+	return 0
+}
+
+func similarityTrackSeedKey(seed model.MediaFile) string {
+	if key := normalizeKey(seed.MbzRecordingID); key != "" {
+		return "mbid:" + key
+	}
+	if key := normalizeKey(seed.Title); key != "" {
+		return "title:" + key + "|" + normalizeKey(primaryArtistName(seed))
+	}
+	return ""
+}
+
+func getSimilarTracksForSeed(seed model.MediaFile, provider TrackSimilarityProvider) similarTrackSet {
+	key := similarityTrackSeedKey(seed)
+	if key == "" {
+		return similarTrackSet{}
+	}
+
+	trackSimilarityCacheMu.Lock()
+	if cached, ok := trackSimilarityCache[key]; ok {
+		trackSimilarityCacheMu.Unlock()
+		return cached
+	}
+	trackSimilarityCacheMu.Unlock()
+
+	result := similarTrackSet{
+		byTitleArtist: map[string]struct{}{},
+		byTitle:       map[string]struct{}{},
+		byMBID:        map[string]struct{}{},
+	}
+
+	ctx := context.Background()
+	similar, err := provider.GetSimilarSongsByTrack(ctx, seed.ID, seed.Title, primaryArtistName(seed), seed.MbzRecordingID, 25)
+	if err == nil {
+		for _, song := range similar {
+			if mbid := normalizeKey(song.MBID); mbid != "" {
+				result.byMBID[mbid] = struct{}{}
+			}
+			if title := normalizeKey(song.Name); title != "" {
+				result.byTitle[title] = struct{}{}
+				if artist := normalizeKey(song.Artist); artist != "" {
+					result.byTitleArtist[title+"|"+artist] = struct{}{}
+				}
+			}
+		}
+	}
+
+	trackSimilarityCacheMu.Lock()
+	trackSimilarityCache[key] = result
+	trackSimilarityCacheMu.Unlock()
+	return result
+}
+
+func primaryArtistName(mf model.MediaFile) string {
+	if mf.Artist != "" {
+		return mf.Artist
+	}
+	if a := mf.Participants.First(model.RoleArtist); a.Name != "" {
+		return a.Name
+	}
+	return mf.AlbumArtist
 }
 
 func similaritySeedKey(seed model.MediaFile) string {

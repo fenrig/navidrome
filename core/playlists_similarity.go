@@ -8,5 +8,6 @@ import (
 
 func NewPlaylists(ds model.DataStore, imgUpload playlists.ImageUploadService, ag *agents.Agents) playlists.Playlists {
 	playlists.SetArtistSimilarityProvider(ag)
+	playlists.SetTrackSimilarityProvider(ag)
 	return playlists.NewPlaylists(ds, imgUpload)
 }
